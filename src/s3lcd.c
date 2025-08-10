@@ -2625,37 +2625,64 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_show_obj, 1, 1, s3lcd_show);
 /// .deinit()
 /// Deinitialize the s3lcd object and frees allocated memory.
 ///
-
 static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-
-    esp_lcd_panel_del(self->panel_handle);
-    self->panel_handle = NULL;
-
-    esp_lcd_panel_io_del(self->io_handle);
-    self->io_handle = NULL;
-
-    if (mp_obj_is_type(self->bus, &s3lcd_i80_bus_type)) {
-        esp_lcd_del_i80_bus(self->bus_handle.i80);
-        self->bus_handle.i80 = NULL;
-    } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
-        s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
-        spi_bus_free(config->spi_host);
-        self->bus_handle.spi = NULL;
+    
+    // Clean up the LCD panel
+    if (self->panel_handle) {
+        esp_lcd_panel_del(self->panel_handle);
+        self->panel_handle = NULL;
     }
-
-    m_free(self->work);
-    self->work = NULL;
-
-    m_free(self->frame_buffer);
-    self->frame_buffer = NULL;
+    
+    // Clean up panel I/O - but don't delete it if it belongs to SPI_BUS object
+    if (self->io_handle) {
+        if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
+            // For SPI_BUS: Don't delete io_handle here - SPI_BUS object owns it
+            // The SPI_BUS object will clean up its own io_handle when it's garbage collected
+            self->io_handle = NULL;
+        } else {
+            // For other bus types (I80), clean up normally
+            esp_lcd_panel_io_del(self->io_handle);
+            self->io_handle = NULL;
+        }
+    }
+    
+    // Handle bus cleanup
+    if (mp_obj_is_type(self->bus, &s3lcd_i80_bus_type)) {
+        // I80 bus cleanup (unchanged)
+        if (self->bus_handle.i80) {
+            esp_lcd_del_i80_bus(self->bus_handle.i80);
+            self->bus_handle.i80 = NULL;
+        }
+    } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
+        // SPI bus cleanup - DON'T free the shared bus!
+        // The machine.SPI object manages the bus lifecycle
+        // Just clear our reference
+        self->bus_handle.spi = NULL;
+        
+        // REMOVED: spi_bus_free(config->spi_host); 
+        // This would break other devices using the shared bus!
+    }
+    
+    // Clean up local memory allocations
+    if (self->work) {
+        m_free(self->work);
+        self->work = NULL;
+    }
+    
+    if (self->frame_buffer) {
+        m_free(self->frame_buffer);
+        self->frame_buffer = NULL;
+    }
     self->frame_buffer_size = 0;
-
-    free(self->dma_buffer);
-    self->dma_buffer = NULL;
+    
+    if (self->dma_buffer) {
+        free(self->dma_buffer);
+        self->dma_buffer = NULL;
+    }
     self->dma_buffer_size = 0;
     self->dma_rows = 0;
-
+    
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_deinit_obj, 1, 1, s3lcd_deinit);
