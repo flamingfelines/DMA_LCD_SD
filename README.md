@@ -1,12 +1,12 @@
-# ESP_LCD MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays.
+# ESP_LCD MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays. (Uses machine.SPI instead of creating it's own SPI object)
 
-****Warning:**** This work in progress may contain bugs or incorrect documentation.
+****Warning:**** This is VERY MUCH a work in progress and may contain bugs or incorrect documentation.
 
 ## Overview
 
 This is a driver for MicroPython for devices using the esp_lcd intel 8080 8-bit parallel bus and SPI interfaces. The driver is written in C and is based on [devbis' st7789_mpy driver.](https://github.com/devbis/st7789_mpy)
 
-I modified the original driver to add the following features:
+Russ Hughes modified the original driver to add the following features:
 
 - Support for esp-idf ESP_LCD intel 8080 parallel and SPI interfaces using DMA.
 - Display framebuffer enabling alpha blending for many drawing methods.
@@ -20,17 +20,10 @@ I modified the original driver to add the following features:
 - Writing PNGs from the framebuffer using the PNGenc library from https://github.com/bitbank2/PNGenc
 - Drawing and rotating Polygons and filled Polygons.
 - Several example programs. The example programs require a tft_config.py module to be present. Some examples require a tft_buttons.py module as well. You may need to modify the tft_buttons.py module to match the pins your device uses.
+
+- I modified the original s3lcd driver to accept machine.SPI instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
 - tft_config.py and tft_buttons.py configuration examples are provided for:
-  - ESP32S3-BOX and BOX-Lite
-  - LilyGo T-Display-S3
-  - LilyGo T-Dongle-S3
-  - LilyGo T-Embed
-  - LilyGo T-HMI
-  - LilyGo T-QT Pro
-  - Seeed Studio WT32-SC01 Plus
-  - M5STACK ATOM-S3
-  - M5STACK CORES3
-  - BananaPi BPI-Centi-S3
+  - XIAO ESP32-S3 W/ ST7789 DISPLAY (WIP)
 
 ## Pre-compiled firmware
 
@@ -72,15 +65,13 @@ Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Py
 
 ## SPI_BUS Methods
 
-- `s3lcd.SPI_BUS(spi_host, sck, mosi, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
+- `s3lcd.SPI_BUS(spi_bus, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
 
   This method sets the interface configuration of an SPI bus for the ESPLCD driver. The ESPLCD driver will automatically initialize and deinitialize the SPI bus.
 
     ### Required Parameters:
 
-    - `spi_host` SPI host to use.
-    - `sck` sck pin number
-    - `mosi` MOSI pin number
+    - `spi_bus' machine.SPI object to use
     - `dc` D/C pin number
     -
     ### Optional Parameters:
