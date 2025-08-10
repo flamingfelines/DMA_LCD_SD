@@ -21,7 +21,7 @@ Russ Hughes modified the original driver to add the following features:
 - Drawing and rotating Polygons and filled Polygons.
 - Several example programs. The example programs require a tft_config.py module to be present. Some examples require a tft_buttons.py module as well. You may need to modify the tft_buttons.py module to match the pins your device uses.
 
-- I modified the original s3lcd driver to accept machine.SPI instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
+I modified the original s3lcd driver to accept machine.SPI instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
 - tft_config.py and tft_buttons.py configuration examples are provided for:
   - XIAO ESP32-S3 W/ ST7789 DISPLAY (WIP)
 
