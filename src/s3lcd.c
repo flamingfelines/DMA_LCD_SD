@@ -580,52 +580,72 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_line_obj, 6, 7, s3lcd_line);
 
 static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+    
+    // Check if frame buffer is initialized
+    if (self->frame_buffer == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Display not initialized"));
+    }
+    
     mp_buffer_info_t buf_info;
     mp_get_buffer_raise(args[1], &buf_info, MP_BUFFER_READ);
-
+    
     mp_int_t x = mp_obj_get_int(args[2]);
     mp_int_t y = mp_obj_get_int(args[3]);
     mp_int_t w = mp_obj_get_int(args[4]);
     mp_int_t h = mp_obj_get_int(args[5]);
-
     OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, alpha, 255);
-
-    // Clip the rectangle to framebuffer bounds
-    if (x < 0) {
-        int clip = -x;
-        w -= clip;
-        x = 0;
-        buf_info.buf = (uint16_t *)buf_info.buf + clip; // skip clipped columns
-    }
-    if (y < 0) {
-        int clip = -y;
-        h -= clip;
-        y = 0;
-        buf_info.buf = (uint16_t *)buf_info.buf + (clip * w); // skip clipped rows
-    }
-    if (x + w > self->width) {
-        w = self->width - x;
-    }
-    if (y + h > self->height) {
-        h = self->height - y;
-    }
+    
+    // Validate dimensions
     if (w <= 0 || h <= 0) {
-        // Nothing to blit after clipping
         return mp_const_none;
     }
-
-    uint16_t *src = (uint16_t *)buf_info.buf;
-    uint16_t *dst = self->frame_buffer + y * self->width + x;
-
+    
+    // Check buffer size
+    size_t expected_size = (size_t)w * h * sizeof(uint16_t);
+    if (buf_info.len < expected_size) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Buffer too small for specified dimensions"));
+    }
+    
+    // Calculate source and destination offsets for clipping
+    mp_int_t src_x = (x < 0) ? -x : 0;
+    mp_int_t src_y = (y < 0) ? -y : 0;
+    mp_int_t dst_x = (x < 0) ? 0 : x;
+    mp_int_t dst_y = (y < 0) ? 0 : y;
+    
+    // Calculate actual blit dimensions after clipping
+    mp_int_t blit_w = w - src_x;
+    mp_int_t blit_h = h - src_y;
+    
+    // Clip to framebuffer bounds
+    if (dst_x + blit_w > self->width) {
+        blit_w = self->width - dst_x;
+    }
+    if (dst_y + blit_h > self->height) {
+        blit_h = self->height - dst_y;
+    }
+    
+    // Check if anything is left to blit after clipping
+    if (blit_w <= 0 || blit_h <= 0) {
+        return mp_const_none;
+    }
+    
+    // Set up source and destination pointers
+    uint16_t *src = (uint16_t *)buf_info.buf + src_y * w + src_x;
+    uint16_t *dst = self->frame_buffer + dst_y * self->width + dst_x;
+    
     if (alpha == 255) {
-        // Copy without blending
-        COPY_TO_BUFFER(self, src, dst, w, h);
+        // Copy without blending - row by row to handle stride differences
+        for (mp_int_t row = 0; row < blit_h; row++) {
+            COPY_TO_BUFFER(self, src + row * w, dst + row * self->width, blit_w, 1);
+        }
     } else if (alpha > 0) {
-        // Blend with alpha
-        BLEND_TO_BUFFER(self, src, dst, w, h, alpha);
+        // Blend with alpha - row by row
+        for (mp_int_t row = 0; row < blit_h; row++) {
+            BLEND_TO_BUFFER(self, src + row * w, dst + row * self->width, blit_w, 1, alpha);
+        }
     }
     // alpha == 0 means do nothing (transparent)
-
+    
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_blit_buffer_obj, 6, 7, s3lcd_blit_buffer);
@@ -1419,7 +1439,14 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an SPI bus"));
     }
-
+    if (self->panel_handle != NULL) {
+    esp_lcd_panel_del(self->panel_handle);
+    self->panel_handle = NULL;
+    }
+    if (self->io_handle != NULL) {
+        esp_lcd_panel_io_del(self->io_handle);
+        self->io_handle = NULL;
+    }
     s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
     self->swap_color_bytes = config->flags.swap_color_bytes;
     
@@ -1459,15 +1486,23 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-        esp_lcd_panel_disp_on_off(panel_handle,true);
+        esp_lcd_panel_disp_on_off(panel_handle, true);
 #endif
     } else {
         custom_init(self);
     }
     esp_lcd_panel_invert_color(panel_handle, self->inversion_mode);
     set_rotation(self);
-
+    
+    if (self->frame_buffer != NULL) {
+    m_free(self->frame_buffer);
+    }
     self->frame_buffer = m_malloc(self->frame_buffer_size);
+
+    if (self->frame_buffer == NULL) {
+        mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
+    }
+    
     memset(self->frame_buffer, 0, self->frame_buffer_size);
 
     return mp_const_none;
@@ -2594,18 +2629,27 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
 
 static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-    size_t pixels = self->dma_rows * self->width;
+    
+    if (self->frame_buffer == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Display not initialized"));
+    }
+    
+    if (self->dma_rows == 0) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Invalid DMA rows configuration"));
+    }
+    
     uint16_t *fb = self->frame_buffer;
-    for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
-        s3lcd_dma_display(self, fb, y, self->dma_rows, pixels);
+    
+    for (int y = 0; y < self->height; y += self->dma_rows) {
+        uint16_t rows_to_send = (y + self->dma_rows <= self->height) ? 
+                               self->dma_rows : 
+                               (self->height - y);
+        size_t pixels = rows_to_send * self->width;
+        
+        s3lcd_dma_display(self, fb, y, rows_to_send, pixels);
         fb += pixels;
     }
-
-    if (self->height % self->dma_rows != 0) {
-        size_t remaining = self->height % self->dma_rows;
-        s3lcd_dma_display(self, fb, (self->height - remaining), remaining, remaining * self->width);
-    }
-
+    
     return mp_const_none;
 }
 
@@ -2614,6 +2658,7 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_show_obj, 1, 1, s3lcd_show);
 ///
 /// .deinit()
 /// Deinitialize the s3lcd object and frees allocated memory.
+/// Is not meant to deinitialize the spi bus
 ///
 
 static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
