@@ -9,15 +9,18 @@
 #include "py/runtime.h"
 #include "py/gc.h"
 #include "s3lcd_spi_bus.h"
-#include "machine_spi.h"  // Added for machine.SPI object access
+#include "machine_hw_spi.h"  // Added for machine.SPI object access
 #include <string.h>
+
+// External declaration for machine.SPI type
+extern const mp_obj_type_t machine_spi_type;
 
 static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void) kind;
     s3lcd_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
     // Get SPI info from machine.SPI object
-    machine_spi_obj_t *machine_spi = MP_OBJ_TO_PTR(self->machine_spi_obj);
+    machine_hw_spi_obj_t *machine_spi = MP_OBJ_TO_PTR(self->machine_spi_obj);
     
     mp_printf(print, "<SPI %s, machine_spi=%p, dc=%d, cs=%d, spi_mode=%d, pclk=%d, lcd_cmd_bits=%d, "
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -122,7 +125,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     }
 
     // Get the SPI host from machine.SPI object
-    machine_spi_obj_t *machine_spi = MP_OBJ_TO_PTR(spi_obj);
+    machine_hw_spi_obj_t *machine_spi = MP_OBJ_TO_PTR(spi_obj);
     spi_host_device_t spi_host = machine_spi->host;
 
     // create new spi_bus object
