@@ -582,30 +582,49 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     mp_buffer_info_t buf_info;
     mp_get_buffer_raise(args[1], &buf_info, MP_BUFFER_READ);
+
     mp_int_t x = mp_obj_get_int(args[2]);
     mp_int_t y = mp_obj_get_int(args[3]);
     mp_int_t w = mp_obj_get_int(args[4]);
     mp_int_t h = mp_obj_get_int(args[5]);
-    OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, alpha, 255)
 
-    uint16_t *src = buf_info.buf;
-    uint16_t stride = self->width - w;
-    uint16_t *dst = (uint16_t *) self->frame_buffer + (y * self->width + x);
+    OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, alpha, 255);
 
-    for (int yy = 0; yy < h; yy++) {
-        for (int xx = 0; xx < w; xx++) {
-            if (xx+x < 0 || xx+x >= self->width || yy+y < 0 || yy+y >= self->height) {
-                src++;
-                dst++;
-            }
-            else {
-                *dst = alpha_blend_565(*src, *dst, alpha);
-                src++;
-                dst++;
-            }
-        }
-        dst += stride;
+    // Clip the rectangle to framebuffer bounds
+    if (x < 0) {
+        int clip = -x;
+        w -= clip;
+        x = 0;
+        buf_info.buf = (uint16_t *)buf_info.buf + clip; // skip clipped columns
     }
+    if (y < 0) {
+        int clip = -y;
+        h -= clip;
+        y = 0;
+        buf_info.buf = (uint16_t *)buf_info.buf + (clip * w); // skip clipped rows
+    }
+    if (x + w > self->width) {
+        w = self->width - x;
+    }
+    if (y + h > self->height) {
+        h = self->height - y;
+    }
+    if (w <= 0 || h <= 0) {
+        // Nothing to blit after clipping
+        return mp_const_none;
+    }
+
+    uint16_t *src = (uint16_t *)buf_info.buf;
+    uint16_t *dst = self->frame_buffer + y * self->width + x;
+
+    if (alpha == 255) {
+        // Copy without blending
+        COPY_TO_BUFFER(self, src, dst, w, h);
+    } else if (alpha > 0) {
+        // Blend with alpha
+        BLEND_TO_BUFFER(self, src, dst, w, h, alpha);
+    }
+    // alpha == 0 means do nothing (transparent)
 
     return mp_const_none;
 }
