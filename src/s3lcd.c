@@ -1458,7 +1458,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
             .dc_gpio_num = config->dc_gpio_num,
             .cs_gpio_num = config->cs_gpio_num,
             .pclk_hz = config->pclk_hz,
-            .spi_mode = 0,
+            .spi_mode = config->spi_mode,
             .trans_queue_depth = 10,
             .lcd_cmd_bits = config->lcd_cmd_bits,
             .lcd_param_bits = config->lcd_param_bits,
