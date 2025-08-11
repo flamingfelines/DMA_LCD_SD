@@ -1,6 +1,6 @@
-# ESP_LCD MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays. (Uses machine.SPI instead of creating it's own SPI object)
+# ESP-IDF General DMA-Enabled SPI MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays used in tandem with SD Cards. 
 
-****Warning:**** This is VERY MUCH a work in progress and may contain bugs or incorrect documentation.
+****Warning:**** This is VERY MUCH a work in progress and is NOT complete!
 
 ## Overview
 
