@@ -26,13 +26,13 @@
 #include "py/obj.h"
 #include "esp_lcd_panel_io.h"
 #include "driver/spi_master.h"
-#include "extmod/modmachine.h" // for mp_machine_spi_p_t
+#include "esp_spi.h"
 
-// SPI Bus Configuration Structure
+// LCD SPI Bus Configuration Structure
 typedef struct _s3lcd_spi_bus_obj_t {
     mp_obj_base_t base;                     // base class
     char *name;                             // name of the display
-    mp_obj_t spi_obj;                       // The Python machine.SPI object we attach to
+    mp_obj_t bus_obj;                       // The esp_spi.SPIBus object we attach to
     spi_device_handle_t spi_dev;            // The handle for this display device on the SPI bus
     int spi_host;                           // SPI host (SPI2_HOST, SPI3_HOST, etc.)
     
