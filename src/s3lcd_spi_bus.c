@@ -43,7 +43,7 @@ static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
 static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
     enum {
-        ARG_spi_obj,            // machine.SPI object
+        ARG_esp_spi_bus,        // esp_spi.SPIBus object
         ARG_spi_host,           // SPI host used in SPI object above
         ARG_dc,                 // GPIO used to select the D/C line, set this to -1 if the D/C line not controlled by manually pulling high/low GPIO
         ARG_cs,                 // GPIO used for CS line
@@ -61,7 +61,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     };
 
     static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_spi,              MP_ARG_OBJ  | MP_ARG_REQUIRED                      },
+        { MP_QSTR_bus,              MP_ARG_OBJ  | MP_ARG_REQUIRED                      },
         { MP_QSTR_spi_host,         MP_ARG_INT  | MP_ARG_REQUIRED                      },
         { MP_QSTR_dc,               MP_ARG_INT  | MP_ARG_REQUIRED                      },
         { MP_QSTR_cs,               MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = -1       } },
@@ -81,19 +81,18 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    // Validate spi_obj is a machine.SPI instance with SPI protocol
-    mp_obj_t spi_obj = args[ARG_spi_obj].u_obj;
-    const mp_obj_type_t *spi_type = mp_obj_get_type(spi_obj);
-    // Simple check - just verify it has the expected type name
-    if (spi_type->name != MP_QSTR_SPI) {
-        mp_raise_TypeError(MP_ERROR_TEXT("spi must be a machine.SPI object"));
+    //Validate spi object
+    mp_obj_t bus_obj = args[ARG_esp_spi_bus].u_obj;
+    if (!mp_obj_is_type(bus_obj, &esp_spi_bus_type)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("bus must be an esp_spi.SPIBus object"));
     }
+    esp_spi_bus_obj_t *bus = MP_OBJ_TO_PTR(bus_obj);
 
     s3lcd_spi_bus_obj_t *self = mp_obj_malloc(s3lcd_spi_bus_obj_t, type);
     
     self->base.type = &s3lcd_spi_bus_type;
     self->name = "s3lcd_spi";
-    self->spi_obj = spi_obj;
+    self->bus = bus_obj;
     self->spi_host = args[ARG_spi_host].u_int;
     self->dc_gpio_num = args[ARG_dc].u_int;
     self->cs_gpio_num = args[ARG_cs].u_int;
