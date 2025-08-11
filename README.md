@@ -65,7 +65,7 @@ Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Py
 
 ## SPI_BUS Methods
 
-- `s3lcd.SPI_BUS(spi_bus, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
+- `s3lcd.SPI_BUS(spi_bus, spi_host, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
 
   This method sets the interface configuration of an SPI bus for the ESPLCD driver. The ESPLCD driver will automatically initialize and deinitialize the SPI bus.
 
@@ -73,7 +73,7 @@ Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Py
 
     - `spi_bus' machine.SPI object to use
     - `dc` D/C pin number
-    -
+    - 'spi_host' integer matching whatever host you created the machine.SPI object with.
     ### Optional Parameters:
 
     - `cs` CS pin number
