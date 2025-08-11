@@ -26,12 +26,17 @@
 #include "mphalport.h"
 #include "py/obj.h"
 #include "esp_lcd_panel_io.h"
+#include "driver/spi_master.h"
+#include "extmod/modmachine.h" // for mp_machine_spi_p_t
 
 // spi Configuration
 
 typedef struct _s3lcd_spi_bus_obj_t {
     mp_obj_base_t base;                     // base class
     char *name;                             // name of the display
+    mp_obj_t spi_obj;               // NEW: The Python machine.SPI object we attach to
+    spi_device_handle_t spi_dev;    // NEW: The handle for this display device
+
     int spi_host;                           // SPI host
     int sclk_io_num;                        // GPIO used for SCLK line
     int mosi_io_num;                        // GPIO used for MOSI line
