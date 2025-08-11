@@ -11,8 +11,9 @@
 #include "py/gc.h"
 
 #include "s3lcd_spi_bus.h"
-#include <string.h>
 #include "esp_spi.h"
+#include <string.h>
+
 
 static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void) kind;
