@@ -34,6 +34,7 @@ typedef struct _s3lcd_spi_bus_obj_t {
     char *name;                             // name of the display
     mp_obj_t spi_obj;                       // The Python machine.SPI object we attach to
     spi_device_handle_t spi_dev;            // The handle for this display device on the SPI bus
+    int spi_host;                           // SPI host (SPI2_HOST, SPI3_HOST, etc.)
     
     // GPIO configuration
     int cs_gpio_num;                        // GPIO used for CS line
