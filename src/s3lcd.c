@@ -59,7 +59,6 @@
 
 #include "mpfile.h"
 #include "s3lcd.h"
-#include "s3lcd_i80_bus.h"
 #include "s3lcd_spi_bus.h"
 
 #include "jpg/tjpgd565.h"
@@ -1395,86 +1394,37 @@ static void custom_init(s3lcd_obj_t *self) {
 /// .init()
 /// Initialize the display, This method must be called before any other methods.
 ///
-
 static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
-    if (mp_obj_is_type(self->bus, &s3lcd_i80_bus_type)) {
-        ESP_LOGI(TAG, "Initialize Intel 8080 bus");
-        s3lcd_i80_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
-        self->swap_color_bytes = false;
-        self->bus_handle.i80 = NULL;
-        esp_lcd_i80_bus_config_t bus_config = {
-            .dc_gpio_num = config->dc_gpio_num,
-            .wr_gpio_num = config->wr_gpio_num,
-            .clk_src = LCD_CLK_SRC_PLL160M, // same as default in IDF5 and 0 in the enum of IDF4.4
-            .data_gpio_nums = {
-                config->data_gpio_nums[0],
-                config->data_gpio_nums[1],
-                config->data_gpio_nums[2],
-                config->data_gpio_nums[3],
-                config->data_gpio_nums[4],
-                config->data_gpio_nums[5],
-                config->data_gpio_nums[6],
-                config->data_gpio_nums[7],
-            },
-            .bus_width = config->bus_width,
-            .max_transfer_bytes = self->dma_buffer_size,
-        };
-
-        ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &self->bus_handle.i80));
-        esp_lcd_panel_io_handle_t io_handle = NULL;
-        esp_lcd_panel_io_i80_config_t io_config = {
-            .cs_gpio_num = config->cs_gpio_num,
-            .pclk_hz = config->pclk_hz,
-            .trans_queue_depth = 10,
-            .on_color_trans_done = lcd_panel_done,
-            .user_ctx = self,
-            .dc_levels = {
-                .dc_idle_level = config->dc_levels.dc_idle_level,
-                .dc_cmd_level = config->dc_levels.dc_cmd_level,
-                .dc_dummy_level = config->dc_levels.dc_dummy_level,
-                .dc_data_level = config->dc_levels.dc_data_level,
-            },
-            .lcd_cmd_bits = config->lcd_cmd_bits,
-            .lcd_param_bits = config->lcd_param_bits,
-            .flags = {
-                .cs_active_high = config->flags.cs_active_high,
-                .reverse_color_bits = config->flags.reverse_color_bits,
-                .swap_color_bytes = config->flags.swap_color_bytes,
-                .pclk_active_neg = config->flags.pclk_active_neg,
-                .pclk_idle_low = config->flags.pclk_idle_low,
-            }
-        };
-
-        ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(self->bus_handle.i80, &io_config, &io_handle));
-        self->io_handle = io_handle;
-    } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
-         s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
-        self->swap_color_bytes = config->flags.swap_color_bytes;
-        
-        esp_lcd_panel_io_handle_t io_handle = NULL;
-        esp_lcd_panel_io_spi_config_t io_config = {
-            .dc_gpio_num = config->dc_gpio_num,
-            .cs_gpio_num = config->cs_gpio_num,
-            .pclk_hz = config->pclk_hz,
-            .spi_mode = config->spi_mode,
-            .trans_queue_depth = 10,
-            .lcd_cmd_bits = config->lcd_cmd_bits,
-            .lcd_param_bits = config->lcd_param_bits,
-            .on_color_trans_done = lcd_panel_done,
-            .user_ctx = self,
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-            .flags.dc_as_cmd_phase = config->flags.dc_as_cmd_phase,
-#endif
-            .flags.dc_low_on_data = config->flags.dc_low_on_data,
-            .flags.octal_mode =config->flags.octal_mode,
-            .flags.lsb_first = config->flags.lsb_first
-        };
-
-        ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)config->spi_host, &io_config, &io_handle));
-        self->io_handle = io_handle;
+    if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("bus must be an SPI bus"));
     }
+
+    s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
+    self->swap_color_bytes = config->flags.swap_color_bytes;
+    
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+    esp_lcd_panel_io_spi_config_t io_config = {
+        .dc_gpio_num = config->dc_gpio_num,
+        .cs_gpio_num = config->cs_gpio_num,
+        .pclk_hz = config->pclk_hz,
+        .spi_mode = config->spi_mode,
+        .trans_queue_depth = 10,
+        .lcd_cmd_bits = config->lcd_cmd_bits,
+        .lcd_param_bits = config->lcd_param_bits,
+        .on_color_trans_done = lcd_panel_done,
+        .user_ctx = self,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+        .flags.dc_as_cmd_phase = config->flags.dc_as_cmd_phase,
+#endif
+        .flags.dc_low_on_data = config->flags.dc_low_on_data,
+        .flags.octal_mode = config->flags.octal_mode,
+        .flags.lsb_first = config->flags.lsb_first
+    };
+
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)config->spi_host, &io_config, &io_handle));
+    self->io_handle = io_handle;
 
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
@@ -1490,7 +1440,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-        esp_lcd_panel_disp_on_off(panel_handle,true); //switch lcd on, not longer a part of init
+        esp_lcd_panel_disp_on_off(panel_handle,true);
 #endif
     } else {
         custom_init(self);
@@ -1501,10 +1451,9 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     self->frame_buffer = m_malloc(self->frame_buffer_size);
     memset(self->frame_buffer, 0, self->frame_buffer_size);
 
-    // esp_lcd_panel_io_tx_param(self->io_handle, 0x13, NULL, 0);
-
     return mp_const_none;
 }
+
 static MP_DEFINE_CONST_FUN_OBJ_1(s3lcd_init_obj, s3lcd_init);
 
 ///
@@ -2602,20 +2551,20 @@ unsigned char reverse(unsigned char b) {
    b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
    return b;
 }
-
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
             *dma_buffer++ = _swap_bytes(src[i]);
         }
-    } else{
+    } else {
         memcpy(self->dma_buffer, src, len * 2);
     }
 
     lcd_panel_active = true;
-    esp_lcd_panel_draw_bitmap(self->panel_handle, 0, row, self->width, row + rows, self->dma_buffer);
+    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(self->panel_handle, 0, row, self->width - 1, row + rows - 1, self->dma_buffer));
     while (lcd_panel_active) {
+        // Ideally, yield or wait with an event, not busy wait
     }
 }
 
@@ -2657,28 +2606,34 @@ static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
     esp_lcd_panel_io_del(self->io_handle);
     self->io_handle = NULL;
 
-    if (mp_obj_is_type(self->bus, &s3lcd_i80_bus_type)) {
-        esp_lcd_del_i80_bus(self->bus_handle.i80);
-        self->bus_handle.i80 = NULL;
-    } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
-        // machine.SPI owns the bus, so we don't free it
-        self->bus_handle.spi = -1;
+    // For SPI bus, just clear references; esp_spi bus manages resources
+    if (mp_obj_is_type(self->bus, &esp_spi_bus_type)) {
+        // Clear or reset any bus references you may hold
+        // For example:
+        // self->bus_handle.spi_dev = NULL;
     }
 
-    m_free(self->work);
-    self->work = NULL;
+    if (self->work) {
+        m_free(self->work);
+        self->work = NULL;
+    }
 
-    m_free(self->frame_buffer);
-    self->frame_buffer = NULL;
-    self->frame_buffer_size = 0;
+    if (self->frame_buffer) {
+        m_free(self->frame_buffer);
+        self->frame_buffer = NULL;
+        self->frame_buffer_size = 0;
+    }
 
-    free(self->dma_buffer);
-    self->dma_buffer = NULL;
-    self->dma_buffer_size = 0;
-    self->dma_rows = 0;
+    if (self->dma_buffer) {
+        free(self->dma_buffer);
+        self->dma_buffer = NULL;
+        self->dma_buffer_size = 0;
+        self->dma_rows = 0;
+    }
 
     return mp_const_none;
 }
+
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_deinit_obj, 1, 1, s3lcd_deinit);
 
 static const mp_rom_map_elem_t s3lcd_locals_dict_table[] = {
@@ -2816,7 +2771,11 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     s3lcd_obj_t *self = m_new_obj(s3lcd_obj_t);
     self->base.type = &s3lcd_type;
     self->bus = args[ARG_bus].u_obj;
-
+    //Validate bus type
+    if (!mp_obj_is_type(self->bus, &esp_spi_bus_type)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("bus must be an esp_spi.SPIBus object"));
+    }
+        
     // set s3lcd parameters
     self->rst = args[ARG_reset].u_int;
     self->width = args[ARG_width].u_int;
