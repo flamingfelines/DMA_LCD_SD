@@ -23,4 +23,13 @@ mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
 
 mp_obj_t esp_spi_bus_init(mp_obj_t self_in);
 
+// Device object struct
+typedef struct _esp_spi_device_obj_t {
+    mp_obj_base_t base;
+    spi_device_handle_t spi_dev_handle;
+} esp_spi_device_obj_t;
+
+// Add device function
+mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args);
+
 #endif // ESP_SPI_H
