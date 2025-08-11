@@ -16,7 +16,7 @@
 static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void) kind;
     s3lcd_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<SPI %s, dc=%d, cs=%d, spi_mode=%d, pclk=%d, lcd_cmd_bits=%d, "
+    mp_printf(print, "<SPI_BUS %s, dc=%d, cs=%d, spi_mode=%d, pclk=%d, lcd_cmd_bits=%d, "
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
                      "lcd_param_bits=%d, dc_as_cmd_phase=%d, dc_low_on_data=%d, "
 #else
@@ -40,25 +40,6 @@ static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
         self->flags.swap_color_bytes);
 }
 
-///
-/// spi_bus - Configure a SPI bus.
-///
-/// Parameters:
-///   - spi_bus: machine.SPI object
-///   - dc: GPIO used to select the D/C line, set this to -1 if the D/C line not controlled by manually pulling high/low GPIO
-///   - cs: GPIO used for CS line
-///   - spi_mode: Traditional SPI mode (0~3)
-///   - pclk_hz: Frequency of pixel clock
-///   - lcd_cmd_bits: Bit-width of LCD command
-///   - lcd_param_bits: Bit-width of LCD parameter
-///   - dc_idle_level: data/command pin level when idle
-///   - dc_as_cmd_phase: D/C line value is encoded into SPI transaction command phase
-///   - dc_low_on_data: If this flag is enabled, DC line = 0 means transfer data, DC line = 1 means transfer command; vice versa
-///   - octal_mode: transmit with octal mode (8 data lines), this mode is used to simulate Intel 8080 timing
-///   - lsb_first: transmit LSB bit first
-///   - swap_color_bytes: (bool) Swap data byte order
-///
-
 static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
     enum {
@@ -76,7 +57,6 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
         ARG_octal_mode,         // transmit with octal mode (8 data lines), this mode is used to simulate Intel 8080 timing
         ARG_lsb_first,          // transmit LSB bit first
         ARG_swap_color_bytes,   // Swap data byte order
-
     };
 
     static const mp_arg_t allowed_args[] = {
@@ -99,21 +79,19 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    s3lcd_spi_bus_obj_t *self = mp_obj_malloc(s3lcd_spi_bus_obj_t, type);
-
-    mp_obj_t spi_obj = parsed_args[ARG_spi].u_obj;
     // Validate spi_obj is a machine.SPI instance with SPI protocol
+    mp_obj_t spi_obj = args[ARG_spi_obj].u_obj;
     const mp_obj_type_t *spi_type = mp_obj_get_type(spi_obj);
     const mp_machine_spi_p_t *spi_proto = (const mp_machine_spi_p_t *)MP_OBJ_TYPE_GET_SLOT(spi_type, protocol);
     if (spi_proto == NULL || spi_proto->write == NULL) {
         mp_raise_TypeError(MP_ERROR_TEXT("spi must be a machine.SPI with write method"));
     }
-    
-    // Do NOT create an additional spi_object
+
+    s3lcd_spi_bus_obj_t *self = mp_obj_malloc(s3lcd_spi_bus_obj_t, type);
     
     self->base.type = &s3lcd_spi_bus_type;
     self->name = "s3lcd_spi";
-    self->spi_obj = args[ARG_spi_obj].u_obj;
+    self->spi_obj = spi_obj;
     self->dc_gpio_num = args[ARG_dc].u_int;
     self->cs_gpio_num = args[ARG_cs].u_int;
     self->spi_mode = args[ARG_spi_mode].u_int;
@@ -124,9 +102,13 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     self->flags.dc_as_cmd_phase = args[ARG_dc_as_cmd_phase].u_int;
 #endif
     self->flags.dc_low_on_data = args[ARG_dc_low_on_data].u_int;
-    self->flags.octal_mode = args[ARG_octal_mode].u_int;
+    self->flags.octal_mode = args[ARG_octal_mode].u_bool;
     self->flags.lsb_first = args[ARG_lsb_first].u_bool;
     self->flags.swap_color_bytes = args[ARG_swap_color_bytes].u_bool;
+
+    // Initialize spi_dev as NULL - it will be set up when the display is initialized
+    self->spi_dev = NULL;
+
     return MP_OBJ_FROM_PTR(self);
 }
 
