@@ -1452,15 +1452,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
          s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
         self->swap_color_bytes = config->flags.swap_color_bytes;
-        spi_bus_config_t buscfg = {
-            .sclk_io_num = config->sclk_io_num,
-            .mosi_io_num = config->mosi_io_num,
-            .miso_io_num = -1,
-            .quadwp_io_num = -1,
-            .quadhd_io_num = -1,
-            .max_transfer_sz = self->dma_buffer_size
-        };
-        ESP_ERROR_CHECK(spi_bus_initialize(config->spi_host, &buscfg, SPI_DMA_CH_AUTO));
+        
         esp_lcd_panel_io_handle_t io_handle = NULL;
         esp_lcd_panel_io_spi_config_t io_config = {
             .dc_gpio_num = config->dc_gpio_num,
