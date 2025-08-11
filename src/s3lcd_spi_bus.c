@@ -84,9 +84,9 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     // Validate spi_obj is a machine.SPI instance with SPI protocol
     mp_obj_t spi_obj = args[ARG_spi_obj].u_obj;
     const mp_obj_type_t *spi_type = mp_obj_get_type(spi_obj);
-    const mp_machine_spi_p_t *spi_proto = (const mp_machine_spi_p_t *)MP_OBJ_TYPE_GET_SLOT(spi_type, protocol);
-    if (spi_proto == NULL || spi_proto->write == NULL) {
-        mp_raise_TypeError(MP_ERROR_TEXT("spi must be a machine.SPI with write method"));
+    // Simple check - just verify it has the expected type name
+    if (spi_type->name != MP_QSTR_SPI) {
+        mp_raise_TypeError(MP_ERROR_TEXT("spi must be a machine.SPI object"));
     }
 
     s3lcd_spi_bus_obj_t *self = mp_obj_malloc(s3lcd_spi_bus_obj_t, type);
