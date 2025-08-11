@@ -44,6 +44,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
 {
     enum {
         ARG_spi_obj,            // machine.SPI object
+        ARG_spi_host,           // SPI host used in SPI object above
         ARG_dc,                 // GPIO used to select the D/C line, set this to -1 if the D/C line not controlled by manually pulling high/low GPIO
         ARG_cs,                 // GPIO used for CS line
         ARG_spi_mode,           // Traditional SPI mode (0~3)
@@ -61,10 +62,11 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
 
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_spi,              MP_ARG_OBJ  | MP_ARG_REQUIRED                      },
+        { MP_QSTR_spi_host,         MP_ARG_INT  | MP_ARG_REQUIRED                      },
         { MP_QSTR_dc,               MP_ARG_INT  | MP_ARG_REQUIRED                      },
         { MP_QSTR_cs,               MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = -1       } },
         { MP_QSTR_spi_mode,         MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = -1       } },
-        { MP_QSTR_pclk,             MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 20000000 } },
+        { MP_QSTR_pclk,             MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 40000000 } },
         { MP_QSTR_lcd_cmd_bits,     MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 8        } },
         { MP_QSTR_lcd_param_bits,   MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 8        } },
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -92,6 +94,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     self->base.type = &s3lcd_spi_bus_type;
     self->name = "s3lcd_spi";
     self->spi_obj = spi_obj;
+    self->spi_host = args[ARG_spi_host].u_int;
     self->dc_gpio_num = args[ARG_dc].u_int;
     self->cs_gpio_num = args[ARG_cs].u_int;
     self->spi_mode = args[ARG_spi_mode].u_int;
