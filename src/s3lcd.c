@@ -2662,7 +2662,7 @@ static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
         self->bus_handle.i80 = NULL;
     } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         // machine.SPI owns the bus, so we don't free it
-        self->bus_handle.spi = NULL;
+        self->bus_handle.spi = -1;
     }
 
     m_free(self->work);
