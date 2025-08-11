@@ -2660,44 +2660,51 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_show_obj, 1, 1, s3lcd_show);
 /// Deinitialize the s3lcd object and frees allocated memory.
 /// Is not meant to deinitialize the spi bus
 ///
-
 static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-
-    esp_lcd_panel_del(self->panel_handle);
-    self->panel_handle = NULL;
-
-    esp_lcd_panel_io_del(self->io_handle);
-    self->io_handle = NULL;
-
-    // For SPI bus, just clear references; esp_spi bus manages resources
-    if (mp_obj_is_type(self->bus, &esp_spi_bus_type)) {
-        // Clear or reset any bus references you may hold
-        // For example:
-        // self->bus_handle.spi_dev = NULL;
+    
+    // Clean up LCD panel handle
+    if (self->panel_handle != NULL) {
+        esp_lcd_panel_del(self->panel_handle);
+        self->panel_handle = NULL;
     }
-
-    if (self->work) {
+    
+    // Clean up LCD panel IO handle
+    if (self->io_handle != NULL) {
+        esp_lcd_panel_io_del(self->io_handle);
+        self->io_handle = NULL;
+    }
+    
+    // For s3lcd_spi_bus, just clear references; underlying esp_spi bus manages its own resources
+    if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
+        // Just clear the reference - don't deinitialize the bus itself
+        // The s3lcd_spi_bus and underlying esp_spi_bus remain active for other potential users
+        self->bus = mp_const_none;
+    }
+    
+    // Free work buffer
+    if (self->work != NULL) {
         m_free(self->work);
         self->work = NULL;
     }
-
-    if (self->frame_buffer) {
+    
+    // Free frame buffer
+    if (self->frame_buffer != NULL) {
         m_free(self->frame_buffer);
         self->frame_buffer = NULL;
         self->frame_buffer_size = 0;
     }
-
-    if (self->dma_buffer) {
+    
+    // Free DMA buffer (allocated with malloc, so use free)
+    if (self->dma_buffer != NULL) {
         free(self->dma_buffer);
         self->dma_buffer = NULL;
         self->dma_buffer_size = 0;
         self->dma_rows = 0;
     }
-
+    
     return mp_const_none;
 }
-
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_deinit_obj, 1, 1, s3lcd_deinit);
 
 static const mp_rom_map_elem_t s3lcd_locals_dict_table[] = {
@@ -2769,7 +2776,7 @@ const mp_obj_type_t s3lcd_type = {
 // return the first rotation table if no match is found.
 //
 
-s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {;
+s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {
     for (int i=0; i < MP_ARRAY_SIZE(ROTATIONS); i++) {
         s3lcd_rotation_t *rotation;
         if ((rotation = ROTATIONS[i]) != NULL) {
@@ -2831,13 +2838,15 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
+
     // create new object
     s3lcd_obj_t *self = m_new_obj(s3lcd_obj_t);
     self->base.type = &s3lcd_type;
     self->bus = args[ARG_bus].u_obj;
-    //Validate bus type
-    if (!mp_obj_is_type(self->bus, &esp_spi_bus_type)) {
-        mp_raise_TypeError(MP_ERROR_TEXT("bus must be an esp_spi.SPIBus object"));
+    
+    //Validate bus type - should be s3lcd_spi_bus, not esp_spi_bus
+    if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
+        mp_raise_TypeError(MP_ERROR_TEXT("bus must be an s3lcd_spi_bus object"));
     }
         
     // set s3lcd parameters
@@ -2849,10 +2858,11 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->dma_rows = args[ARG_dma_rows].u_int;
     self->dma_buffer_size = self->dma_rows * longest_axis * 2;
     self->dma_buffer = heap_caps_malloc(self->dma_buffer_size, MALLOC_CAP_DMA);
-    memset(self->dma_buffer, 0, self->dma_buffer_size);
+    self->dma_buffer = heap_caps_malloc(self->dma_buffer_size, MALLOC_CAP_DMA);
     if (self->dma_buffer == NULL) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
     }
+    memset(self->dma_buffer, 0, self->dma_buffer_size);
 
     self->rotations = set_rotations(self->width, self->height);
     self->rotations_len = 4;
