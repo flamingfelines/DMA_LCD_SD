@@ -25,11 +25,4 @@ typedef struct esp_spi_device_obj_t {
 
 extern const mp_obj_type_t esp_spi_device_type;
 
-// Function declarations
-mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
-                             size_t n_args, size_t n_kw,
-                             const mp_obj_t *args);
-mp_obj_t esp_spi_bus_init(mp_obj_t self_in);
-mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args);
-
 #endif // ESP_SPI_H
