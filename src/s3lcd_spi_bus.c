@@ -8,6 +8,7 @@
 #include "mphalport.h"
 #include "py/obj.h"
 #include "py/runtime.h"
+#include "py/mpconfig.h"
 #include "py/gc.h"
 
 #include "s3lcd_spi_bus.h"
