@@ -7,7 +7,8 @@ typedef struct esp_sd_obj_t {
     mp_obj_base_t base;
     sdmmc_card_t *card;
     char *mount_point;
-    bool mounted;
+    mp_obj_t bus;           
+    int cs_pin;            
 } esp_sd_obj_t;
 // Type declaration
 extern const mp_obj_type_t esp_sd_type;
