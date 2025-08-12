@@ -23,7 +23,7 @@ static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
     };
 
     mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all(n_args, args, n_kw, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
+    mp_arg_parse_all_kw_array(n_args, n_kw, args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
 
     esp_spi_bus_obj_t *self = mp_obj_malloc(esp_spi_bus_obj_t, type);
     self->base.type = &esp_spi_bus_type;
