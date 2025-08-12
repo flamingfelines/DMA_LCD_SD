@@ -29,7 +29,7 @@ static void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kin
               self->mounted, self->mount_point ? self->mount_point : "None", self->cs_pin);
 }
 
-static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args, mp_map_t *kw_args) {
     enum { ARG_bus, ARG_cs, ARG_mount_point };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_bus, MP_ARG_OBJ | MP_ARG_REQUIRED },
@@ -38,7 +38,7 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     };
 
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
+    mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
     // Validate bus object type
     if (!mp_obj_is_type(args[ARG_bus].u_obj, &esp_spi_bus_type)) {
