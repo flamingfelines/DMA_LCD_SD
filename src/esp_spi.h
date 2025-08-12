@@ -3,6 +3,7 @@
 
 #include "py/obj.h"
 #include "driver/spi_master.h"
+#include <stdbool.h>
 
 // SPIBus object struct
 typedef struct esp_spi_bus_obj_t {
