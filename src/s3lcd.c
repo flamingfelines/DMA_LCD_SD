@@ -641,7 +641,7 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
             uint16_t *src_ptr = src + row * w;
             uint16_t *dst_ptr = dst + row * self->width;
             mp_int_t h = 1;
-            COPY_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, 1);
+            COPY_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, h);
         }
     } else if (alpha > 0) {
         // Blend with alpha - row by row
@@ -649,7 +649,7 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
             uint16_t *src_ptr = src + row * w;
             uint16_t *dst_ptr = dst + row * self->width;
             mp_int_t h = 1;
-            BLEND_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, 1, alpha);  // Use src_ptr and dst_ptr here too
+            BLEND_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, h, alpha);  // Use src_ptr and dst_ptr here too
     }
     }
     // alpha == 0 means do nothing (transparent)
