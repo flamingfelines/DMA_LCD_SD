@@ -13,13 +13,15 @@ typedef struct esp_sd_obj_t {
     mp_obj_base_t base;
     sdmmc_card_t *card;
     char *mount_point;
+    mp_obj_t bus;           // Store the SPI bus object
+    int cs_pin;             // Store the CS pin
     bool mounted;
 } esp_sd_obj_t;
 
 STATIC void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<esp_sd.SDCard mounted=%d mount_point=%s>", 
-              self->mounted, self->mount_point ? self->mount_point : "None");
+    mp_printf(print, "<esp_sd.SDCard mounted=%d mount_point=%s cs=%d>", 
+              self->mounted, self->mount_point ? self->mount_point : "None", self->cs_pin);
 }
 
 STATIC mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
@@ -43,6 +45,10 @@ STATIC mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     self->card = NULL;
     self->mounted = false;
     
+    // Store bus and CS pin in the object
+    self->bus = args[ARG_bus].u_obj;
+    self->cs_pin = args[ARG_cs].u_int;
+    
     // Copy mount point string
     const char *mount_point_str = mp_obj_str_get_str(args[ARG_mount_point].u_obj);
     size_t len = strlen(mount_point_str);
@@ -52,21 +58,19 @@ STATIC mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC mp_obj_t esp_sd_mount(size_t n_args, const mp_obj_t *args) {
-    esp_sd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-    mp_obj_t bus_in = args[1];
-    mp_int_t cs_pin = mp_obj_get_int(args[2]);
+STATIC mp_obj_t esp_sd_mount(mp_obj_t self_in) {
+    esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (self->mounted) {
         mp_raise_ValueError(MP_ERROR_TEXT("Already mounted"));
     }
 
-    // Validate bus object type
-    if (!mp_obj_is_type(bus_in, &esp_spi_bus_type)) {
-        mp_raise_ValueError(MP_ERROR_TEXT("Expected esp_spi.SPIBus object"));
+    // Validate bus object type (should already be validated in make_new, but double-check)
+    if (!mp_obj_is_type(self->bus, &esp_spi_bus_type)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid SPI bus object"));
     }
     
-    esp_spi_bus_obj_t *bus = MP_OBJ_TO_PTR(bus_in);
+    esp_spi_bus_obj_t *bus = MP_OBJ_TO_PTR(self->bus);
     
     if (!bus->initialized) {
         mp_raise_ValueError(MP_ERROR_TEXT("SPI bus not initialized"));
@@ -76,7 +80,7 @@ STATIC mp_obj_t esp_sd_mount(size_t n_args, const mp_obj_t *args) {
 
     // SD card slot configuration
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = cs_pin;
+    slot_config.gpio_cs = self->cs_pin;
     slot_config.host_id = host_id;
 
     // Mount configuration
@@ -136,7 +140,7 @@ STATIC mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
 }
 
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_umount_obj, esp_sd_umount);
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(esp_sd_mount_obj, 3, 3, esp_sd_mount);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_mount_obj, esp_sd_mount);
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_deinit_obj, esp_sd_deinit);
 
 STATIC const mp_rom_map_elem_t esp_sd_locals_dict_table[] = {
