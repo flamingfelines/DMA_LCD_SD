@@ -37,5 +37,12 @@ target_include_directories(usermod_dma_lcd_sd INTERFACE
 list(APPEND MICROPY_DEF_BOARD
     MICROPY_HW_ENABLE_SDCARD=1
 )
+# Force include fatfs component for SD card support
+if(NOT "fatfs" IN_LIST BUILD_COMPONENTS)
+    list(APPEND EXTRA_COMPONENT_DIRS "$ENV{IDF_PATH}/components/fatfs")
+endif()
+
+# Ensure SD card related components are included
+list(APPEND BUILD_COMPONENTS fatfs sdmmc)
 # Link our INTERFACE library to the usermod target.
 target_link_libraries(usermod INTERFACE usermod_dma_lcd_sd)
