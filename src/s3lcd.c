@@ -2912,7 +2912,7 @@ static const mp_map_elem_t s3lcd_module_globals_table[] = {
     {MP_ROM_QSTR(MP_QSTR_color565), (mp_obj_t)&s3lcd_color565_obj},
     {MP_ROM_QSTR(MP_QSTR_map_bitarray_to_rgb565), (mp_obj_t)&s3lcd_map_bitarray_to_rgb565_obj},
     {MP_ROM_QSTR(MP_QSTR_ESPLCD), (mp_obj_t)&s3lcd_type},
-    {MP_ROM_QSTR(MP_QSTR_I80_BUS), (mp_obj_t)&s3lcd_i80_bus_type},
+    //{MP_ROM_QSTR(MP_QSTR_I80_BUS), (mp_obj_t)&s3lcd_i80_bus_type}, not used in this driver
     {MP_ROM_QSTR(MP_QSTR_SPI_BUS), (mp_obj_t)&s3lcd_spi_bus_type},
 
     {MP_ROM_QSTR(MP_QSTR_RGB), MP_ROM_INT(ESP_LCD_COLOR_SPACE_RGB)},
