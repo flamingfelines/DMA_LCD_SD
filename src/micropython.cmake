@@ -1,8 +1,7 @@
 # Create an INTERFACE library for our C module.
-add_library(usermod_s3lcd INTERFACE)
-
+add_library(usermod_dma_lcd_sd INTERFACE)
 # Add our source files to the lib
-target_sources(usermod_s3lcd INTERFACE
+target_sources(usermod_dma_lcd_sd INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/s3lcd.c
     ${CMAKE_CURRENT_LIST_DIR}/s3lcd_i80_bus.c
     ${CMAKE_CURRENT_LIST_DIR}/s3lcd_spi_bus.c
@@ -19,15 +18,20 @@ target_sources(usermod_s3lcd INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/pngenc/trees.c
     ${CMAKE_CURRENT_LIST_DIR}/pngenc/zutil.c
 )
-
 # Add the current directory as an include directory.
-target_include_directories(usermod_s3lcd INTERFACE
+target_include_directories(usermod_dma_lcd_sd INTERFACE
+    ${MICROPY_DIR}
+    ${MICROPY_DIR}/py
+    ${MICROPY_PORT_DIR}
     ${IDF_PATH}/components/esp_lcd/include/
-    ${IDF_PATH}/components/driver/spi/include/
+    ${IDF_PATH}/components/hal/include/
+    ${IDF_PATH}/components/soc/include/
+    ${IDF_PATH}/components/esp_driver_spi/include/
+    ${IDF_PATH}/components/esp_driver_gpio/include/
+    ${IDF_PATH}/components/esp_driver_i2s/include/
     ${IDF_PATH}/components/sdmmc/include/
     ${IDF_PATH}/components/fatfs/vfs/
     ${CMAKE_CURRENT_LIST_DIR}
 )
-
 # Link our INTERFACE library to the usermod target.
-target_link_libraries(usermod INTERFACE usermod_s3lcd)
+target_link_libraries(usermod INTERFACE usermod_dma_lcd_sd)
