@@ -11,7 +11,7 @@ static void esp_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_prin
         self->miso_io_num, self->mosi_io_num, self->sclk_io_num, self->initialized);
 }
 
-mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
+static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
                                     size_t n_args, size_t n_kw,
                                     const mp_obj_t *args) {
     enum { ARG_miso, ARG_mosi, ARG_sclk, ARG_host };
@@ -36,7 +36,7 @@ mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
     return MP_OBJ_FROM_PTR(self);
 }
 
-mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
+static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (self->initialized) {
@@ -62,7 +62,7 @@ mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(esp_spi_bus_init_obj, esp_spi_bus_init);
 
-mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+static mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(args[0]);
 
     if (!self->initialized) {
