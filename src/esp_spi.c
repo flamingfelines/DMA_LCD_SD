@@ -1,5 +1,6 @@
 #include "esp_spi.h"
 #include "py/runtime.h"
+#include "py/mpconfig.h"
 #include "driver/spi_master.h"
 #include "esp_err.h"
 #include "py/obj.h"
