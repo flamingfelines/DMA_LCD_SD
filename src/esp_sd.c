@@ -38,7 +38,7 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     };
 
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+    mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
 
     // Validate bus object type
     if (!mp_obj_is_type(args[ARG_bus].u_obj, &esp_spi_bus_type)) {
