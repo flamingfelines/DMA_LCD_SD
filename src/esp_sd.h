@@ -12,10 +12,10 @@ typedef struct esp_sd_obj_t {
     bool mounted;
 } esp_sd_obj_t;
 
-// Type declaration
+// Type declaration - for modern MicroPython
 extern const mp_obj_type_t esp_sd_type;
 
-// Function declarations
+// Function declarations (these can remain the same)
 mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args);
 mp_obj_t esp_sd_mount(size_t n_args, const mp_obj_t *args);
 mp_obj_t esp_sd_umount(mp_obj_t self_in);
