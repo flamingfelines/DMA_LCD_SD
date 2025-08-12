@@ -647,8 +647,8 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
         for (mp_int_t row = 0; row < blit_h; row++) {
             uint16_t *src_ptr = src + row * w;
             uint16_t *dst_ptr = dst + row * self->width;
-            BLEND_TO_BUFFER(self, src + row * w, dst + row * self->width, blit_w, 1, alpha);
-        }
+            BLEND_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, 1, alpha);  // Use src_ptr and dst_ptr here too
+    }
     }
     // alpha == 0 means do nothing (transparent)
     
