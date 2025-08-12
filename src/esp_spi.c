@@ -127,23 +127,25 @@ STATIC void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_p
     mp_printf(print, "<esp_spi.SPIDevice %p>", self->spi_dev_handle);
 }
 
-// Device type
-const mp_obj_type_t esp_spi_device_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_SPIDevice,
-    .print = esp_spi_device_print,
-};
-
 STATIC const mp_rom_map_elem_t esp_spi_bus_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&esp_spi_bus_init_obj) },
     { MP_ROM_QSTR(MP_QSTR_add_device), MP_ROM_PTR(&esp_spi_bus_add_device_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(esp_spi_bus_locals_dict, esp_spi_bus_locals_dict_table);
 
-const mp_obj_type_t esp_spi_bus_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_SPIBus,
-    .print = esp_spi_bus_print,
-    .make_new = esp_spi_bus_make_new,
-    .locals_dict = (mp_obj_dict_t *)&esp_spi_bus_locals_dict,
-};
+// Modern MicroPython type definition using slots
+MP_DEFINE_CONST_OBJ_TYPE(
+    esp_spi_device_type,
+    MP_QSTR_SPIDevice,
+    MP_TYPE_FLAG_NONE,
+    print, esp_spi_device_print
+);
+
+MP_DEFINE_CONST_OBJ_TYPE(
+    esp_spi_bus_type,
+    MP_QSTR_SPIBus,
+    MP_TYPE_FLAG_NONE,
+    print, esp_spi_bus_print,
+    make_new, esp_spi_bus_make_new,
+    locals_dict, &esp_spi_bus_locals_dict
+);
