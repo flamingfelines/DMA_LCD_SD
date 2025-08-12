@@ -1,5 +1,6 @@
 #include "py/obj.h"
 #include "py/runtime.h"
+#include "py/mpconfig.h"
 #include "py/mperrno.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
