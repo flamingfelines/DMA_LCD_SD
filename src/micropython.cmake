@@ -33,5 +33,9 @@ target_include_directories(usermod_dma_lcd_sd INTERFACE
     ${IDF_PATH}/components/fatfs/vfs/
     ${CMAKE_CURRENT_LIST_DIR}
 )
+# Ensure fatfs component is available for SD card support
+list(APPEND MICROPY_DEF_BOARD
+    MICROPY_HW_ENABLE_SDCARD=1
+)
 # Link our INTERFACE library to the usermod target.
 target_link_libraries(usermod INTERFACE usermod_dma_lcd_sd)
