@@ -640,6 +640,7 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
             // Use local variables:
             uint16_t *src_ptr = src + row * w;
             uint16_t *dst_ptr = dst + row * self->width;
+            mp_int_t h = 1;
             COPY_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, 1);
         }
     } else if (alpha > 0) {
@@ -647,6 +648,7 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
         for (mp_int_t row = 0; row < blit_h; row++) {
             uint16_t *src_ptr = src + row * w;
             uint16_t *dst_ptr = dst + row * self->width;
+            mp_int_t h = 1;
             BLEND_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, 1, alpha);  // Use src_ptr and dst_ptr here too
     }
     }
