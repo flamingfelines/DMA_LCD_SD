@@ -637,11 +637,16 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
     if (alpha == 255) {
         // Copy without blending - row by row to handle stride differences
         for (mp_int_t row = 0; row < blit_h; row++) {
-            COPY_TO_BUFFER(self, src + row * w, dst + row * self->width, blit_w, 1);
+            // Use local variables:
+            uint16_t *src_ptr = src + row * w;
+            uint16_t *dst_ptr = dst + row * self->width;
+            COPY_TO_BUFFER(self, src_ptr, dst_ptr, blit_w, 1);
         }
     } else if (alpha > 0) {
         // Blend with alpha - row by row
         for (mp_int_t row = 0; row < blit_h; row++) {
+            uint16_t *src_ptr = src + row * w;
+            uint16_t *dst_ptr = dst + row * self->width;
             BLEND_TO_BUFFER(self, src + row * w, dst + row * self->width, blit_w, 1, alpha);
         }
     }
