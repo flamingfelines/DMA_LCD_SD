@@ -1,11 +1,18 @@
 #include "py/obj.h"
 #include "py/runtime.h"
 #include "py/mperrno.h"
+#include "py/mpconfig.h"
+#include <string.h>
+#include <sys/unistd.h>
+#include <sys/stat.h>
+#include "esp_vfs_fat.h"
+#include "sdmmc_cmd.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
-#include "esp_vfs_fat.h"
 #include "esp_log.h"
-#include "esp_spi.h" // Your esp_spi.SPIBus definition header
+#include "esp_spi.h"
+
+static const char *TAG = "esp_sd";
 
 static const char *TAG = "esp_sd";
 
