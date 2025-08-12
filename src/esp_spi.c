@@ -1,18 +1,17 @@
 #include "esp_spi.h"
 #include "py/runtime.h"
-#include "py/mpconfig.h"
 #include "driver/spi_master.h"
 #include "esp_err.h"
 #include "py/obj.h"
 #include "driver/gpio.h"
 
-STATIC void esp_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+static void esp_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_printf(print, "<esp_spi.SPIBus miso=%d mosi=%d sclk=%d initialized=%d>",
         self->miso_io_num, self->mosi_io_num, self->sclk_io_num, self->initialized);
 }
 
-STATIC mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
+static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
                                     size_t n_args, size_t n_kw,
                                     const mp_obj_t *args) {
     enum { ARG_miso, ARG_mosi, ARG_sclk, ARG_host };
@@ -37,7 +36,7 @@ STATIC mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
+static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (self->initialized) {
@@ -61,9 +60,9 @@ STATIC mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
     self->initialized = true;
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_spi_bus_init_obj, esp_spi_bus_init);
+static MP_DEFINE_CONST_FUN_OBJ_1(esp_spi_bus_init_obj, esp_spi_bus_init);
 
-STATIC mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
+static mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(args[0]);
 
     if (!self->initialized) {
@@ -120,19 +119,19 @@ STATIC mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_m
 
     return MP_OBJ_FROM_PTR(dev);
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_KW(esp_spi_bus_add_device_obj, 1, esp_spi_bus_add_device);
+static MP_DEFINE_CONST_FUN_OBJ_KW(esp_spi_bus_add_device_obj, 1, esp_spi_bus_add_device);
 
 // Device object print
-STATIC void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+static void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_spi_device_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_printf(print, "<esp_spi.SPIDevice %p>", self->spi_dev_handle);
 }
 
-STATIC const mp_rom_map_elem_t esp_spi_bus_locals_dict_table[] = {
+static const mp_rom_map_elem_t esp_spi_bus_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&esp_spi_bus_init_obj) },
     { MP_ROM_QSTR(MP_QSTR_add_device), MP_ROM_PTR(&esp_spi_bus_add_device_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(esp_spi_bus_locals_dict, esp_spi_bus_locals_dict_table);
+static MP_DEFINE_CONST_DICT(esp_spi_bus_locals_dict, esp_spi_bus_locals_dict_table);
 
 // Modern MicroPython type definition using slots
 MP_DEFINE_CONST_OBJ_TYPE(
