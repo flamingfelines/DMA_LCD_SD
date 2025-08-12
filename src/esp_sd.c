@@ -38,9 +38,8 @@ STATIC mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
         mp_raise_ValueError(MP_ERROR_TEXT("Expected esp_spi.SPIBus object"));
     }
 
-    // Create object first
-    esp_sd_obj_t *self = m_new_obj(esp_sd_obj_t);
-    self->base.type = &esp_sd_type;
+    // Create object using mp_obj_malloc (modern way)
+    esp_sd_obj_t *self = mp_obj_malloc(esp_sd_obj_t, type);
     self->card = NULL;
     self->mounted = false;
     
@@ -147,13 +146,15 @@ STATIC const mp_rom_map_elem_t esp_sd_locals_dict_table[] = {
 };
 STATIC MP_DEFINE_CONST_DICT(esp_sd_locals_dict, esp_sd_locals_dict_table);
 
-const mp_obj_type_t esp_sd_type = {
-    { &mp_type_type },
-    .name = MP_QSTR_SDCard,
-    .print = esp_sd_print,
-    .make_new = esp_sd_make_new,
-    .locals_dict = (mp_obj_dict_t *)&esp_sd_locals_dict,
-};
+// Modern MicroPython type definition
+MP_DEFINE_CONST_OBJ_TYPE(
+    esp_sd_type,
+    MP_QSTR_SDCard,
+    MP_TYPE_FLAG_NONE,
+    print, esp_sd_print,
+    make_new, esp_sd_make_new,
+    locals_dict, &esp_sd_locals_dict
+);
 
 STATIC const mp_rom_map_elem_t esp_sd_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_esp_sd) },
