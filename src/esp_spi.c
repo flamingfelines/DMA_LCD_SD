@@ -66,7 +66,7 @@ mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *k
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(args[0]);
 
     if (!self->initialized) {
-        mp_raise_msg(&mp_type_OSError, "SPI bus not initialized");
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("spi_bus_initialize failed"));
     }
 
     enum {
@@ -111,7 +111,7 @@ mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *k
     spi_device_handle_t spi_dev_handle;
     esp_err_t ret = spi_bus_add_device(self->host, &devcfg, &spi_dev_handle);
     if (ret != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, "spi_bus_add_device failed");
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("spi_bus_add_device failed"));
     }
 
     esp_spi_device_obj_t *dev = mp_obj_malloc(esp_spi_device_obj_t, &esp_spi_device_type);
