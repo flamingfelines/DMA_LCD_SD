@@ -14,8 +14,6 @@
 
 static const char *TAG = "esp_sd";
 
-static const char *TAG = "esp_sd";
-
 typedef struct esp_sd_obj_t {
     mp_obj_base_t base;
     sdmmc_card_t *card;
