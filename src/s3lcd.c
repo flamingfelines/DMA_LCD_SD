@@ -47,6 +47,7 @@
 #include "py/objstr.h"
 #include "py/objmodule.h"
 #include "py/runtime.h"
+#include "py/mpconfig.h"
 #include "py/builtin.h"
 #include "py/mphal.h"
 
