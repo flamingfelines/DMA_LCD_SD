@@ -89,7 +89,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     if (!mp_obj_is_type(bus_obj, &esp_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an esp_spi.SPIBus object"));
     }
-    esp_spi_bus_obj_t *bus = MP_OBJ_TO_PTR(bus_obj);
+    esp_spi_bus_obj_t *bus_obj = MP_OBJ_TO_PTR(bus_obj);
 
     s3lcd_spi_bus_obj_t *self = mp_obj_malloc(s3lcd_spi_bus_obj_t, type);
     
