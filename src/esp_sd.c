@@ -1,6 +1,5 @@
 #include "py/obj.h"
 #include "py/runtime.h"
-#include "py/mpconfig.h"
 #include "py/mperrno.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
@@ -19,13 +18,13 @@ typedef struct esp_sd_obj_t {
     bool mounted;
 } esp_sd_obj_t;
 
-STATIC void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+static void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_printf(print, "<esp_sd.SDCard mounted=%d mount_point=%s cs=%d>", 
               self->mounted, self->mount_point ? self->mount_point : "None", self->cs_pin);
 }
 
-STATIC mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
+static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum { ARG_bus, ARG_cs, ARG_mount_point };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_bus, MP_ARG_OBJ | MP_ARG_REQUIRED },
@@ -59,7 +58,7 @@ STATIC mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     return MP_OBJ_FROM_PTR(self);
 }
 
-STATIC mp_obj_t esp_sd_mount(mp_obj_t self_in) {
+static mp_obj_t esp_sd_mount(mp_obj_t self_in) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
 
     if (self->mounted) {
@@ -104,7 +103,7 @@ STATIC mp_obj_t esp_sd_mount(mp_obj_t self_in) {
     return mp_const_none;
 }
 
-STATIC mp_obj_t esp_sd_umount(mp_obj_t self_in) {
+static mp_obj_t esp_sd_umount(mp_obj_t self_in) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
     if (!self->mounted || !self->card) {
@@ -123,7 +122,7 @@ STATIC mp_obj_t esp_sd_umount(mp_obj_t self_in) {
     return mp_const_none;
 }
 
-STATIC mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
+static mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
     // Unmount if still mounted
@@ -140,16 +139,16 @@ STATIC mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
     return mp_const_none;
 }
 
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_umount_obj, esp_sd_umount);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_mount_obj, esp_sd_mount);
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_deinit_obj, esp_sd_deinit);
+static MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_umount_obj, esp_sd_umount);
+static MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_mount_obj, esp_sd_mount);
+static MP_DEFINE_CONST_FUN_OBJ_1(esp_sd_deinit_obj, esp_sd_deinit);
 
-STATIC const mp_rom_map_elem_t esp_sd_locals_dict_table[] = {
+static const mp_rom_map_elem_t esp_sd_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_mount), MP_ROM_PTR(&esp_sd_mount_obj) },
     { MP_ROM_QSTR(MP_QSTR_umount), MP_ROM_PTR(&esp_sd_umount_obj) },
     { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&esp_sd_deinit_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(esp_sd_locals_dict, esp_sd_locals_dict_table);
+static MP_DEFINE_CONST_DICT(esp_sd_locals_dict, esp_sd_locals_dict_table);
 
 // Modern MicroPython type definition
 MP_DEFINE_CONST_OBJ_TYPE(
@@ -161,11 +160,11 @@ MP_DEFINE_CONST_OBJ_TYPE(
     locals_dict, &esp_sd_locals_dict
 );
 
-STATIC const mp_rom_map_elem_t esp_sd_module_globals_table[] = {
+static const mp_rom_map_elem_t esp_sd_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_esp_sd) },
     { MP_ROM_QSTR(MP_QSTR_SDCard), MP_ROM_PTR(&esp_sd_type) },
 };
-STATIC MP_DEFINE_CONST_DICT(esp_sd_module_globals, esp_sd_module_globals_table);
+static MP_DEFINE_CONST_DICT(esp_sd_module_globals, esp_sd_module_globals_table);
 
 const mp_obj_module_t esp_sd_module = {
     .base = { &mp_type_module },
