@@ -54,7 +54,7 @@ static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
 
     esp_err_t ret = spi_bus_initialize(self->host, &buscfg, SPI_DMA_CH_AUTO);
     if (ret != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, "spi_bus_initialize failed");
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("spi_bus_initialize failed"));
     }
 
     self->initialized = true;
