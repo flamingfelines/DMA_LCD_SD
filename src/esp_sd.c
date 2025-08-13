@@ -165,15 +165,15 @@ static mp_obj_t esp_sd_card_info(mp_obj_t self_in) {
         mp_raise_ValueError(MP_ERROR_TEXT("SD card not mounted"));
     }
 
-    // Create a dictionary with card information
     mp_obj_t info_dict = mp_obj_new_dict(6);
     
     // Card name
     mp_obj_dict_store(info_dict, MP_OBJ_NEW_QSTR(MP_QSTR_name), 
                      mp_obj_new_str(self->card->cid.name, strlen(self->card->cid.name)));
-    
-    // Card capacity in MB
-    uint64_t capacity_mb = ((uint64_t)self->card->csd.capacity) * self->card->csd.sector_size / (1024 * 1024);
+
+    // Card capacity in MB (works for SDSC and SDHC/SDXC)
+    uint64_t card_size_bytes = (uint64_t)self->card->csd.capacity * self->card->csd.sector_size;
+    uint64_t capacity_mb = card_size_bytes / (1024 * 1024);
     mp_obj_dict_store(info_dict, MP_OBJ_NEW_QSTR(MP_QSTR_capacity_mb), 
                      mp_obj_new_int(capacity_mb));
     
@@ -183,25 +183,26 @@ static mp_obj_t esp_sd_card_info(mp_obj_t self_in) {
     
     // Card type
     const char *card_type_str;
-    switch (self->card->csd.card_type) {
-        case SDMMC_CARD_TYPE_SDSC: card_type_str = "SDSC"; break;
-        case SDMMC_CARD_TYPE_SDHC: card_type_str = "SDHC"; break;
-        case SDMMC_CARD_TYPE_SDXC: card_type_str = "SDXC"; break;
-        default: card_type_str = "Unknown"; break;
+    if (self->card->csd.capacity > 0xFFFFFF) {
+        card_type_str = "SDHC/SDXC";
+    } else {
+        card_type_str = "SDSC";
     }
     mp_obj_dict_store(info_dict, MP_OBJ_NEW_QSTR(MP_QSTR_type), 
                      mp_obj_new_str(card_type_str, strlen(card_type_str)));
-    
-    // Speed
+
+    // Max frequency
     mp_obj_dict_store(info_dict, MP_OBJ_NEW_QSTR(MP_QSTR_max_freq_khz), 
                      mp_obj_new_int(self->card->max_freq_khz));
     
     // Mount point
     mp_obj_dict_store(info_dict, MP_OBJ_NEW_QSTR(MP_QSTR_mount_point), 
                      mp_obj_new_str(self->mount_point, strlen(self->mount_point)));
-    
+
     return info_dict;
 }
+
+
 
 // Check if SD card is mounted
 static mp_obj_t esp_sd_is_mounted(mp_obj_t self_in) {
