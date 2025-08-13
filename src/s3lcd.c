@@ -2601,16 +2601,17 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
     uint16_t *dma_buffer = self->dma_buffer;
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
-            *dma_buffer++ = _swap_bytes(src[i]);
+            *dma_buffer++ = swap_bytes(src[i]); // Fixed typo from original
         }
     } else {
         memcpy(self->dma_buffer, src, len * 2);
     }
-
+    
     lcd_panel_active = true;
     ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(self->panel_handle, 0, row, self->width - 1, row + rows - 1, self->dma_buffer));
     while (lcd_panel_active) {
-        // Ideally, yield or wait with an event, not busy wait
+        // Wait for transfer to complete
+        // The lcd_panel_done callback will set lcd_panel_active = false
     }
 }
 
