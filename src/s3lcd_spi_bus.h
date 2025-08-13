@@ -28,6 +28,10 @@
 #include "driver/spi_master.h"
 #include "esp_spi.h"
 
+bool lcd_panel_done(esp_lcd_panel_io_handle_t panel_io,
+                    esp_lcd_panel_io_event_data_t *edata,
+                    void *user_ctx);
+
 // LCD SPI Bus Configuration Structure
 // Add this to your existing s3lcd_spi_bus.h
 
