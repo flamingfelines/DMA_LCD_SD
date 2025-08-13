@@ -1438,14 +1438,16 @@ static void custom_init(s3lcd_obj_t *self) {
 
 
 ///
-/// .init()
-/// Initialize the display, This method must be called before any other methods.
+/// .init() - Simplified version using proper LCD API
+/// Initialize the display using the IO handle created by s3lcd_spi_bus
 ///
 static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an SPI bus"));
     }
+    
+    // Clean up existing handles if they exist
     if (self->panel_handle != NULL) {
         esp_lcd_panel_del(self->panel_handle);
         self->panel_handle = NULL;
@@ -1454,41 +1456,25 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         esp_lcd_panel_io_del(self->io_handle);
         self->io_handle = NULL;
     }
+    
     s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
     self->swap_color_bytes = config->flags.swap_color_bytes;
     
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = config->dc_gpio_num,
-        .cs_gpio_num = config->cs_gpio_num,
-        .pclk_hz = config->pclk_hz,
-        .spi_mode = config->spi_mode,
-        .trans_queue_depth = 10,
-        .lcd_cmd_bits = config->lcd_cmd_bits,
-        .lcd_param_bits = config->lcd_param_bits,
-        .on_color_trans_done = lcd_panel_done,
-        .user_ctx = self,
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-        .flags.dc_as_cmd_phase = config->flags.dc_as_cmd_phase,
-#endif
-        .flags.dc_low_on_data = config->flags.dc_low_on_data,
-        .flags.octal_mode = config->flags.octal_mode,
-        .flags.lsb_first = config->flags.lsb_first
-    };
+    // Use the IO handle that was created by s3lcd_spi_bus
+    self->io_handle = config->io_handle;
     
-    // The key fix: Use the correct SPI host number (should be 1 for SPI2_HOST, not 2)
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)config->spi_host, &io_config, &io_handle));
-    self->io_handle = io_handle;
-    
+    // Create the ST7789 panel using the proper IO handle
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = self->rst,
         .color_space = self->color_space,
         .bits_per_pixel = 16,
     };
+    
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(self->io_handle, &panel_config, &panel_handle));
     self->panel_handle = panel_handle;
     
+    // Initialize the panel using the standard LCD API
     esp_lcd_panel_reset(panel_handle);
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
@@ -1498,9 +1484,11 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     } else {
         custom_init(self);
     }
+    
     esp_lcd_panel_invert_color(panel_handle, self->inversion_mode);
     set_rotation(self);
     
+    // Allocate frame buffer
     if (self->frame_buffer != NULL) {
         m_free(self->frame_buffer);
     }
