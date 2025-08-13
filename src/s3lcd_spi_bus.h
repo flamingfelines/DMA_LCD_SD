@@ -29,32 +29,30 @@
 #include "esp_spi.h"
 
 // LCD SPI Bus Configuration Structure
+// Add this to your existing s3lcd_spi_bus.h
+
 typedef struct _s3lcd_spi_bus_obj_t {
-    mp_obj_base_t base;                     // base class
-    char *name;                             // name of the display
-    mp_obj_t bus_obj;                       // The esp_spi.SPIBus object we attach to
-    spi_device_handle_t spi_dev;            // The handle for this display device on the SPI bus
-    int spi_host;                           // SPI host (SPI2_HOST, SPI3_HOST, etc.)
+    mp_obj_base_t base;
+    char *name;
+    mp_obj_t bus_obj;                           // Reference to esp_spi.SPIBus object
+    int spi_host;                               // SPI host number
+    int dc_gpio_num;                            // DC/RS GPIO pin
+    int cs_gpio_num;                            // CS GPIO pin
+    int spi_mode;                               // SPI mode (0-3)
+    unsigned int pclk_hz;                       // Pixel clock frequency
+    int lcd_cmd_bits;                           // LCD command bits
+    int lcd_param_bits;                         // LCD parameter bits
+    esp_lcd_panel_io_handle_t io_handle;        // LCD panel IO handle - ADD THIS
+    spi_device_handle_t spi_dev;                // SPI device handle (can keep for compatibility)
     
-    // GPIO configuration
-    int cs_gpio_num;                        // GPIO used for CS line
-    int dc_gpio_num;                        // GPIO used to select the D/C line, set this to -1 if the D/C line not controlled by manually pulling high/low GPIO
-    
-    // SPI configuration parameters
-    int spi_mode;                           // Traditional SPI mode (0~3)
-    unsigned int pclk_hz;                   // Frequency of pixel clock
-    int lcd_cmd_bits;                       // Bit-width of LCD command
-    int lcd_param_bits;                     // Bit-width of LCD parameter
-    
-    // Flags for SPI behavior
     struct {
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-        unsigned int dc_as_cmd_phase: 1;    // D/C line value is encoded into SPI transaction command phase
+        unsigned int dc_as_cmd_phase:1;
 #endif
-        unsigned int dc_low_on_data: 1;     // If this flag is enabled, DC line = 0 means transfer data, DC line = 1 means transfer command; vice versa
-        unsigned int octal_mode: 1;         // transmit with octal mode (8 data lines), this mode is used to simulate Intel 8080 timing
-        unsigned int lsb_first: 1;          // transmit LSB bit first
-        unsigned int swap_color_bytes: 1;   // Swap color bytes in 16-bit color mode
+        unsigned int dc_low_on_data:1;
+        unsigned int octal_mode:1;
+        unsigned int lsb_first:1;
+        unsigned int swap_color_bytes:1;
     } flags;
 } s3lcd_spi_bus_obj_t;
 
