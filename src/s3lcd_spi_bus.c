@@ -14,7 +14,9 @@
 #include "s3lcd_spi_bus.h"
 #include "esp_spi.h"
 #include <string.h>
+#include <stdbool.h>
 
+volatile bool lcd_panel_active = false;
 bool lcd_panel_done(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
     lcd_panel_active = false;
     return false;
