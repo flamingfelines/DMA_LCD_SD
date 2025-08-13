@@ -149,3 +149,20 @@ MP_DEFINE_CONST_OBJ_TYPE(
     make_new, esp_spi_bus_make_new,
     locals_dict, &esp_spi_bus_locals_dict
 );
+
+// Module globals table
+static const mp_rom_map_elem_t esp_spi_module_globals_table[] = {
+    { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_esp_spi) },
+    { MP_ROM_QSTR(MP_QSTR_SPIBus), MP_ROM_PTR(&esp_spi_bus_type) },
+    { MP_ROM_QSTR(MP_QSTR_SPIDevice), MP_ROM_PTR(&esp_spi_device_type) },
+};
+static MP_DEFINE_CONST_DICT(esp_spi_module_globals, esp_spi_module_globals_table);
+
+// Define the module
+const mp_obj_module_t mp_module_esp_spi = {
+    .base = { &mp_type_module },
+    .globals = (mp_obj_dict_t *)&esp_spi_module_globals,
+};
+
+// Register the module so MicroPython can find it
+MP_REGISTER_MODULE(MP_QSTR_esp_spi, mp_module_esp_spi);
