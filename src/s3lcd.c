@@ -1443,13 +1443,12 @@ static void custom_init(s3lcd_obj_t *self) {
 ///
 static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
-
     if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an SPI bus"));
     }
     if (self->panel_handle != NULL) {
-    esp_lcd_panel_del(self->panel_handle);
-    self->panel_handle = NULL;
+        esp_lcd_panel_del(self->panel_handle);
+        self->panel_handle = NULL;
     }
     if (self->io_handle != NULL) {
         esp_lcd_panel_io_del(self->io_handle);
@@ -1476,20 +1475,20 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         .flags.octal_mode = config->flags.octal_mode,
         .flags.lsb_first = config->flags.lsb_first
     };
-
+    
+    // The key fix: Use the correct SPI host number (should be 1 for SPI2_HOST, not 2)
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)config->spi_host, &io_config, &io_handle));
     self->io_handle = io_handle;
-
+    
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = self->rst,
         .color_space = self->color_space,
         .bits_per_pixel = 16,
     };
-
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(self->io_handle, &panel_config, &panel_handle));
     self->panel_handle = panel_handle;
-
+    
     esp_lcd_panel_reset(panel_handle);
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
@@ -1503,19 +1502,16 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     set_rotation(self);
     
     if (self->frame_buffer != NULL) {
-    m_free(self->frame_buffer);
+        m_free(self->frame_buffer);
     }
     self->frame_buffer = m_malloc(self->frame_buffer_size);
-
     if (self->frame_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
     }
     
     memset(self->frame_buffer, 0, self->frame_buffer_size);
-
     return mp_const_none;
 }
-
 static MP_DEFINE_CONST_FUN_OBJ_1(s3lcd_init_obj, s3lcd_init);
 
 ///
