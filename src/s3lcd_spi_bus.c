@@ -34,6 +34,7 @@ static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
         self->pclk_hz,
         self->lcd_cmd_bits,
         self->lcd_param_bits,
+        .on_color_trans_done = lcd_panel_done,
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         self->flags.dc_as_cmd_phase,
 #endif
