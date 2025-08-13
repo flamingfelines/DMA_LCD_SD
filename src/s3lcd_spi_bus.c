@@ -1,3 +1,48 @@
+#include "esp_lcd_panel_commands.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_lcd_panel_ops.h"
+#include "soc/soc_caps.h"
+#include "driver/gpio.h"
+
+#include "mphalport.h"
+#include "py/obj.h"
+#include "py/runtime.h"
+#include "py/mpconfig.h"
+#include "py/gc.h"
+
+#include "s3lcd_spi_bus.h"
+#include "esp_spi.h"
+#include <string.h>
+
+
+static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
+    (void) kind;
+    s3lcd_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    mp_printf(print, "<SPI_BUS %s, dc=%d, cs=%d, spi_mode=%d, pclk=%d, lcd_cmd_bits=%d, "
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+                     "lcd_param_bits=%d, dc_as_cmd_phase=%d, dc_low_on_data=%d, "
+#else
+                     "lcd_param_bits=%d, dc_low_on_data=%d, "
+#endif
+                     "octal_mode=%d, lsb_first=%d, swap_color_bytes=%d>",
+
+        self->name,
+        self->dc_gpio_num,
+        self->cs_gpio_num,
+        self->spi_mode,
+        self->pclk_hz,
+        self->lcd_cmd_bits,
+        self->lcd_param_bits,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+        self->flags.dc_as_cmd_phase,
+#endif
+        self->flags.dc_low_on_data,
+        self->flags.octal_mode,
+        self->flags.lsb_first,
+        self->flags.swap_color_bytes);
+}
+
 static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
     enum {
