@@ -2589,7 +2589,7 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
     uint16_t *dma_buffer = self->dma_buffer;
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
-            *dma_buffer++ = swapbytes(src[i]);
+            *dma_buffer++ = _swap_bytes(src[i]);
         }
     } else {
         memcpy(self->dma_buffer, src, len * 2);
