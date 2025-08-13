@@ -15,6 +15,10 @@
 #include "esp_spi.h"
 #include <string.h>
 
+bool lcd_panel_done(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
+    lcd_panel_active = false;
+    return false;
+}
 
 static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void) kind;
