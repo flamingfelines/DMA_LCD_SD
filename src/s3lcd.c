@@ -2591,27 +2591,19 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 //  rows: number of rows to send
 //  len: pixel data length to send
 
-unsigned char reverse(unsigned char b) {
-   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-   return b;
-}
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
-            *dma_buffer++ = swap_bytes(src[i]); // Fixed typo from original
+            *dma_buffer++ = swap_bytes(src[i]); // Fixed the typo: was *swap*bytes(src[i])
         }
     } else {
         memcpy(self->dma_buffer, src, len * 2);
     }
-    
     lcd_panel_active = true;
     ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(self->panel_handle, 0, row, self->width - 1, row + rows - 1, self->dma_buffer));
     while (lcd_panel_active) {
-        // Wait for transfer to complete
-        // The lcd_panel_done callback will set lcd_panel_active = false
+        // Ideally, yield or wait with an event, not busy wait
     }
 }
 
