@@ -164,11 +164,6 @@ s3lcd_rotation_t *ROTATIONS[] = {
     ROTATIONS_128x128,
     NULL
 };
-//
-// flag to indicate an esp_lcd_panel_draw_bitmap operation is in progress
-//
-
-static volatile bool lcd_panel_active = false;
 
 static void s3lcd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
