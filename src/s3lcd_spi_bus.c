@@ -1,48 +1,3 @@
-#include "esp_lcd_panel_commands.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_vendor.h"
-#include "esp_lcd_panel_ops.h"
-#include "soc/soc_caps.h"
-#include "driver/gpio.h"
-
-#include "mphalport.h"
-#include "py/obj.h"
-#include "py/runtime.h"
-#include "py/mpconfig.h"
-#include "py/gc.h"
-
-#include "s3lcd_spi_bus.h"
-#include "esp_spi.h"
-#include <string.h>
-
-
-static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
-    (void) kind;
-    s3lcd_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<SPI_BUS %s, dc=%d, cs=%d, spi_mode=%d, pclk=%d, lcd_cmd_bits=%d, "
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-                     "lcd_param_bits=%d, dc_as_cmd_phase=%d, dc_low_on_data=%d, "
-#else
-                     "lcd_param_bits=%d, dc_low_on_data=%d, "
-#endif
-                     "octal_mode=%d, lsb_first=%d, swap_color_bytes=%d>",
-
-        self->name,
-        self->dc_gpio_num,
-        self->cs_gpio_num,
-        self->spi_mode,
-        self->pclk_hz,
-        self->lcd_cmd_bits,
-        self->lcd_param_bits,
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
-        self->flags.dc_as_cmd_phase,
-#endif
-        self->flags.dc_low_on_data,
-        self->flags.octal_mode,
-        self->flags.lsb_first,
-        self->flags.swap_color_bytes);
-}
-
 static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args)
 {
     enum {
@@ -68,7 +23,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
         { MP_QSTR_spi_host,         MP_ARG_INT  | MP_ARG_REQUIRED                      },
         { MP_QSTR_dc,               MP_ARG_INT  | MP_ARG_REQUIRED                      },
         { MP_QSTR_cs,               MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = -1       } },
-        { MP_QSTR_spi_mode,         MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = -1       } },
+        { MP_QSTR_spi_mode,         MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 0        } },
         { MP_QSTR_pclk,             MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 40000000 } },
         { MP_QSTR_lcd_cmd_bits,     MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 8        } },
         { MP_QSTR_lcd_param_bits,   MP_ARG_INT  | MP_ARG_KW_ONLY, {.u_int = 8        } },
@@ -89,7 +44,12 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     if (!mp_obj_is_type(bus_obj, &esp_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an esp_spi.SPIBus object"));
     }
-    //esp_spi_bus_obj_t *bus = MP_OBJ_TO_PTR(bus_obj); Pretty sure this is unused
+
+    // Get the SPI bus object to verify it's initialized
+    esp_spi_bus_obj_t *spi_bus = MP_OBJ_TO_PTR(bus_obj);
+    if (!spi_bus->initialized) {
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("SPI bus not initialized"));
+    }
 
     s3lcd_spi_bus_obj_t *self = mp_obj_malloc(s3lcd_spi_bus_obj_t, type);
     
@@ -111,50 +71,32 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     self->flags.lsb_first = args[ARG_lsb_first].u_bool;
     self->flags.swap_color_bytes = args[ARG_swap_color_bytes].u_bool;
 
-    // Initialize spi_dev as NULL - it will be set up when the display is initialized
+    // Create the LCD panel IO handle using the existing shared SPI bus
+    esp_lcd_panel_io_spi_config_t io_config = {
+        .dc_gpio_num = self->dc_gpio_num,
+        .cs_gpio_num = self->cs_gpio_num,
+        .pclk_hz = self->pclk_hz,
+        .spi_mode = self->spi_mode,
+        .trans_queue_depth = 10,
+        .lcd_cmd_bits = self->lcd_cmd_bits,
+        .lcd_param_bits = self->lcd_param_bits,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
+        .flags.dc_as_cmd_phase = self->flags.dc_as_cmd_phase,
+#endif
+        .flags.dc_low_on_data = self->flags.dc_low_on_data,
+        .flags.octal_mode = self->flags.octal_mode,
+        .flags.lsb_first = self->flags.lsb_first
+    };
+
+    // Create the panel IO handle - this is the key step!
+    // Cast spi_host to esp_lcd_spi_bus_handle_t as shown in ESP-IDF docs
+    esp_err_t ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)self->spi_host, &io_config, &self->io_handle);
+    if (ret != ESP_OK) {
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to create LCD panel IO"));
+    }
+
+    // Initialize spi_dev as NULL - not needed anymore since we have proper IO handle
     self->spi_dev = NULL;
 
     return MP_OBJ_FROM_PTR(self);
 }
-
-static const mp_rom_map_elem_t s3lcd_spi_bus_locals_dict_table[] = {
-};
-static MP_DEFINE_CONST_DICT(s3lcd_spi_bus_locals_dict, s3lcd_spi_bus_locals_dict_table);
-
-#if MICROPY_OBJ_TYPE_REPR == MICROPY_OBJ_TYPE_REPR_SLOT_INDEX
-
-MP_DEFINE_CONST_OBJ_TYPE(
-    s3lcd_spi_bus_type,
-    MP_QSTR_SPI_BUS,
-    MP_TYPE_FLAG_NONE,
-    print, s3lcd_spi_bus_print,
-    make_new, s3lcd_spi_bus_make_new,
-    locals_dict, &s3lcd_spi_bus_locals_dict);
-
-#else
-
-const mp_obj_type_t s3lcd_spi_bus_type = {
-    {&mp_type_type},
-    .name = MP_QSTR_SPI_BUS,
-    .print = s3lcd_spi_bus_print,
-    .make_new = s3lcd_spi_bus_make_new,
-    .locals_dict = (mp_obj_dict_t *)&s3lcd_spi_bus_locals_dict,
-};
-
-#endif
-
-// Module globals table
-static const mp_rom_map_elem_t s3lcd_spi_bus_module_globals_table[] = {
-    { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_s3lcd_spi_bus) },
-    { MP_ROM_QSTR(MP_QSTR_SPI_BUS), MP_ROM_PTR(&s3lcd_spi_bus_type) },
-};
-static MP_DEFINE_CONST_DICT(s3lcd_spi_bus_module_globals, s3lcd_spi_bus_module_globals_table);
-
-// Define the module
-const mp_obj_module_t mp_module_s3lcd_spi_bus = {
-    .base = { &mp_type_module },
-    .globals = (mp_obj_dict_t *)&s3lcd_spi_bus_module_globals,
-};
-
-// Register the module so MicroPython can find it
-MP_REGISTER_MODULE(MP_QSTR_s3lcd_spi_bus, mp_module_s3lcd_spi_bus);
