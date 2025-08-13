@@ -142,3 +142,19 @@ const mp_obj_type_t s3lcd_spi_bus_type = {
 };
 
 #endif
+
+// Module globals table
+static const mp_rom_map_elem_t s3lcd_spi_bus_module_globals_table[] = {
+    { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_s3lcd_spi_bus) },
+    { MP_ROM_QSTR(MP_QSTR_SPI_BUS), MP_ROM_PTR(&s3lcd_spi_bus_type) },
+};
+static MP_DEFINE_CONST_DICT(s3lcd_spi_bus_module_globals, s3lcd_spi_bus_module_globals_table);
+
+// Define the module
+const mp_obj_module_t mp_module_s3lcd_spi_bus = {
+    .base = { &mp_type_module },
+    .globals = (mp_obj_dict_t *)&s3lcd_spi_bus_module_globals,
+};
+
+// Register the module so MicroPython can find it
+MP_REGISTER_MODULE(MP_QSTR_s3lcd_spi_bus, mp_module_s3lcd_spi_bus);
