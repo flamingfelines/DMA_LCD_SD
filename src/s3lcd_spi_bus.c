@@ -34,7 +34,6 @@ static void s3lcd_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_pr
         self->pclk_hz,
         self->lcd_cmd_bits,
         self->lcd_param_bits,
-        .on_color_trans_done = lcd_panel_done,
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         self->flags.dc_as_cmd_phase,
 #endif
@@ -126,6 +125,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
         .trans_queue_depth = 10,
         .lcd_cmd_bits = self->lcd_cmd_bits,
         .lcd_param_bits = self->lcd_param_bits,
+        .on_color_trans_done = lcd_panel_done,
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         .flags.dc_as_cmd_phase = self->flags.dc_as_cmd_phase,
 #endif
