@@ -37,11 +37,12 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
         { MP_QSTR_mount_point, MP_ARG_OBJ | MP_ARG_REQUIRED },
     };
 
-    mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
+    // Fixed: Changed variable name from 'args' to 'parsed_args' to avoid conflict
+    mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
+    mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
 
     // Validate bus object type
-    if (!mp_obj_is_type(args[ARG_bus].u_obj, &esp_spi_bus_type)) {
+    if (!mp_obj_is_type(parsed_args[ARG_bus].u_obj, &esp_spi_bus_type)) {
         mp_raise_ValueError(MP_ERROR_TEXT("Expected esp_spi.SPIBus object"));
     }
 
@@ -51,11 +52,11 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     self->mounted = false;
     
     // Store bus and CS pin in the object
-    self->bus = args[ARG_bus].u_obj;
-    self->cs_pin = args[ARG_cs].u_int;
+    self->bus = parsed_args[ARG_bus].u_obj;
+    self->cs_pin = parsed_args[ARG_cs].u_int;
     
     // Copy mount point string
-    const char *mount_point_str = mp_obj_str_get_str(args[ARG_mount_point].u_obj);
+    const char *mount_point_str = mp_obj_str_get_str(parsed_args[ARG_mount_point].u_obj);
     size_t len = strlen(mount_point_str);
     self->mount_point = m_new(char, len + 1);
     strcpy(self->mount_point, mount_point_str);
@@ -88,6 +89,10 @@ static mp_obj_t esp_sd_mount(mp_obj_t self_in) {
     slot_config.gpio_cs = self->cs_pin;
     slot_config.host_id = host_id;
 
+    // Fixed: Create proper sdmmc_host_t structure for SPI
+    sdmmc_host_t host_config = SDSPI_HOST_DEFAULT();
+    host_config.slot = host_id;
+
     // Mount configuration
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
@@ -95,8 +100,8 @@ static mp_obj_t esp_sd_mount(mp_obj_t self_in) {
         .allocation_unit_size = 16 * 1024
     };
 
-    // Mount the SD card
-    esp_err_t ret = esp_vfs_fat_sdspi_mount(self->mount_point, &host_id, &slot_config, &mount_config, &self->card);
+    // Fixed: Pass correct host_config pointer instead of &host_id
+    esp_err_t ret = esp_vfs_fat_sdspi_mount(self->mount_point, &host_config, &slot_config, &mount_config, &self->card);
     if (ret != ESP_OK) {
         mp_raise_OSError(ret);
     }
