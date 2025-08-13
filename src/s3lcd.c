@@ -164,7 +164,6 @@ s3lcd_rotation_t *ROTATIONS[] = {
     ROTATIONS_128x128,
     NULL
 };
-
 //
 // flag to indicate an esp_lcd_panel_draw_bitmap operation is in progress
 //
