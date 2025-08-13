@@ -27,7 +27,9 @@
 #include "esp_lcd_panel_io.h"
 #include "driver/spi_master.h"
 #include "esp_spi.h"
+#include <stdbool.h>
 
+extern volatile bool lcd_panel_active;
 bool lcd_panel_done(esp_lcd_panel_io_handle_t panel_io,
                     esp_lcd_panel_io_event_data_t *edata,
                     void *user_ctx);
