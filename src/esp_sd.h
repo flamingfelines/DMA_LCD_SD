@@ -4,15 +4,17 @@
 #include "py/obj.h"
 #include "driver/sdmmc_types.h"
 #include <stdbool.h>
+#include <stdint.h>
 
-// SD Card object struct
+// SD Card object struct - updated to match new implementation
 typedef struct esp_sd_obj_t {
     mp_obj_base_t base;
     sdmmc_card_t *card;
-    char *mount_point;
-    mp_obj_t bus;           
-    int cs_pin;            
-    bool mounted;           // Added: missing mounted field
+    mp_obj_t bus;           // SPI bus object
+    int cs_pin;             // CS pin number
+    bool initialized;       // Changed: was 'mounted', now 'initialized'
+    uint32_t block_count;   // Added: total number of blocks
+    uint32_t block_size;    // Added: block size in bytes
 } esp_sd_obj_t;
 
 // Type declaration
