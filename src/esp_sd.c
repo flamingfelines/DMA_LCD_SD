@@ -20,6 +20,7 @@ typedef struct esp_sd_obj_t {
     bool initialized;
     uint32_t block_count;
     uint32_t block_size;
+    sdspi_dev_handle_t spi_handle;
 } esp_sd_obj_t;
 
 extern const mp_obj_type_t esp_sd_type;
@@ -83,17 +84,14 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
     sdmmc_host_t host_config = SDSPI_HOST_DEFAULT();
     host_config.slot = bus->host;
 
-    // Initialize SD card with SPI configuration
-    esp_err_t ret = sdspi_host_init_device(&slot_config, &self->card);
-
     // Allocate card structure
     self->card = malloc(sizeof(sdmmc_card_t));
     if (self->card == NULL) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Out of memory"));
     }
 
-    // Initialize SD card with SPI configuration
-    esp_err_t ret = sdspi_host_init_device(&slot_config, &self->card);
+    // Initialize SPI device handle
+    esp_err_t ret = sdspi_host_init_device(&slot_config, &self->spi_handle);
     if (ret != ESP_OK) {
         free(self->card);
         self->card = NULL;
@@ -103,8 +101,10 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
     // Initialize card protocol
     ret = sdmmc_card_init(&host_config, self->card);
     if (ret != ESP_OK) {
+        sdspi_host_remove_device(self->spi_handle);
         free(self->card);
         self->card = NULL;
+        self->spi_handle = -1;
         mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("SD card init failed (ESP error: 0x%x)"), ret);
     }
 
@@ -201,6 +201,11 @@ static mp_obj_t esp_sd_ioctl(mp_obj_t self_in, mp_obj_t op_obj, mp_obj_t arg_obj
 // Cleanup
 static mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    
+    if (self->spi_handle != -1) {
+        sdspi_host_remove_device(self->spi_handle);
+        self->spi_handle = -1;
+    }
     
     if (self->card) {
         free(self->card);
