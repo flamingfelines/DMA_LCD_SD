@@ -56,7 +56,7 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     self->cs_pin = parsed_args[ARG_cs].u_int;
     self->block_count = 0;
     self->block_size = 512;  // Standard SD block size
-    self->spi_handle = -1;   // Invalid handle initially
+    self->spi_handle = NULL;   // Invalid handle initially
 
     return MP_OBJ_FROM_PTR(self);
 }
