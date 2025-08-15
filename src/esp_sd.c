@@ -12,17 +12,6 @@
 
 static const char *TAG = "esp_sd";
 
-typedef struct esp_sd_obj_t {
-    mp_obj_base_t base;
-    sdmmc_card_t *card;
-    mp_obj_t bus;           
-    int cs_pin;             
-    bool initialized;
-    uint32_t block_count;
-    uint32_t block_size;
-    sdspi_dev_handle_t spi_handle;
-} esp_sd_obj_t;
-
 extern const mp_obj_type_t esp_sd_type;
 
 static void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
