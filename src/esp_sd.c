@@ -114,7 +114,7 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
         sdspi_host_remove_device(self->spi_handle);
         free(self->card);
         self->card = NULL;
-        self->spi_handle = -1;
+        self->spi_handle = NULL;
         mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("SD card init failed (ESP error: 0x%x)"), ret);
     }
 
@@ -212,9 +212,9 @@ static mp_obj_t esp_sd_ioctl(mp_obj_t self_in, mp_obj_t op_obj, mp_obj_t arg_obj
 static mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
-    if (self->spi_handle != -1) {
+    if (self->spi_handle != NULL) {
         sdspi_host_remove_device(self->spi_handle);
-        self->spi_handle = -1;
+        self->spi_handle = NULL;
     }
     
     if (self->card) {
