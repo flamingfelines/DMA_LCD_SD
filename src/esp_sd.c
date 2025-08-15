@@ -36,7 +36,7 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
 
     // Validate CS pin range (adjust range as needed for your platform)
     int cs_pin = parsed_args[ARG_cs].u_int;
-    if (cs_pin < 0 || cs_pin > 39) {  // ESP32 GPIO range example
+    if (cs_pin < 0 || cs_pin > 45) {  // ESP32 GPIO range example
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid CS pin number"));
     }
     
