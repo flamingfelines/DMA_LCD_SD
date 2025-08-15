@@ -41,6 +41,10 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
 
+    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d",
+             parsed_args[ARG_bus].u_obj,
+             parsed_args[ARG_cs].u_int);
+    
     if (!mp_obj_is_type(parsed_args[ARG_bus].u_obj, &esp_spi_bus_type)) {
         mp_raise_ValueError(MP_ERROR_TEXT("Expected esp_spi.SPIBus object"));
     }
@@ -79,6 +83,14 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot_config.gpio_cs = self->cs_pin;
     slot_config.host_id = bus->host;
+    
+    // Initialize SPI device handle
+    esp_err_t ret = sdspi_host_init_device(&slot_config, &self->spi_handle);
+    if (ret != ESP_OK) {
+        free(self->card);
+        self->card = NULL;
+        mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("SD SPI init failed (ESP error: 0x%x)"), ret);
+    }
 
     // Create sdmmc_host_t structure for SPI mode
     sdmmc_host_t host_config = SDSPI_HOST_DEFAULT();
@@ -88,14 +100,6 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
     self->card = malloc(sizeof(sdmmc_card_t));
     if (self->card == NULL) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Out of memory"));
-    }
-
-    // Initialize SPI device handle
-    esp_err_t ret = sdspi_host_init_device(&slot_config, &self->spi_handle);
-    if (ret != ESP_OK) {
-        free(self->card);
-        self->card = NULL;
-        mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("SD SPI init failed (ESP error: 0x%x)"), ret);
     }
 
     // Initialize card protocol
