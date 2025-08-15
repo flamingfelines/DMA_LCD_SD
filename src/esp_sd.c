@@ -62,7 +62,7 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
     self->cs_pin = parsed_args[ARG_cs].u_int;
     self->block_count = 0;
     self->block_size = 512;  // Standard SD block size
-    self->spi_handle = NULL;   // Invalid handle initially
+    self->spi_handle = -1;   // Invalid handle initially
 
     return MP_OBJ_FROM_PTR(self);
 }
@@ -114,7 +114,7 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
         sdspi_host_remove_device(self->spi_handle);
         free(self->card);
         self->card = NULL;
-        self->spi_handle = NULL;
+        self->spi_handle = -1;
         mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("SD card init failed (ESP error: 0x%x)"), ret);
     }
 
@@ -212,9 +212,9 @@ static mp_obj_t esp_sd_ioctl(mp_obj_t self_in, mp_obj_t op_obj, mp_obj_t arg_obj
 static mp_obj_t esp_sd_deinit(mp_obj_t self_in) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
-    if (self->spi_handle != NULL) {
+    if (self->spi_handle != -1) {
         sdspi_host_remove_device(self->spi_handle);
-        self->spi_handle = NULL;
+        self->spi_handle = -1;
     }
     
     if (self->card) {
