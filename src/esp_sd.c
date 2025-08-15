@@ -37,17 +37,23 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
         { MP_QSTR_bus, MP_ARG_OBJ | MP_ARG_REQUIRED },
         { MP_QSTR_cs, MP_ARG_INT | MP_ARG_REQUIRED },
     };
-
     mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
-
-    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d",
-             parsed_args[ARG_bus].u_obj,
-             parsed_args[ARG_cs].u_int);
     
+    // Validate bus object first
     if (!mp_obj_is_type(parsed_args[ARG_bus].u_obj, &esp_spi_bus_type)) {
         mp_raise_ValueError(MP_ERROR_TEXT("Expected esp_spi.SPIBus object"));
     }
+
+    // Validate CS pin range (adjust range as needed for your platform)
+    int cs_pin = parsed_args[ARG_cs].u_int;
+    if (cs_pin < 0 || cs_pin > 39) {  // ESP32 GPIO range example
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid CS pin number"));
+    }
+    
+    // Now safe to log
+    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d",
+             parsed_args[ARG_bus].u_obj, cs_pin);
 
     esp_sd_obj_t *self = mp_obj_malloc(esp_sd_obj_t, type);
     self->card = NULL;
