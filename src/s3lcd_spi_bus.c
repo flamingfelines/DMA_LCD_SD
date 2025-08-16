@@ -142,7 +142,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
 
     // Create the panel IO handle - this is the key step!
     // Cast spi_host to esp_lcd_spi_bus_handle_t as shown in ESP-IDF docs
-    esp_err_t ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)self->spi_host, &io_config, &self->io_handle);
+    esp_err_t ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)(self->spi_host), &io_config, &self->io_handle);
     if (ret != ESP_OK) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to create LCD panel IO"));
     }
