@@ -11,26 +11,42 @@ static void esp_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_prin
         self->miso_io_num, self->mosi_io_num, self->sclk_io_num, self->initialized);
 }
 
+// Fixed esp_spi_bus_make_new function for ESP-IDF 5.4.2 compatibility
 static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
                                     size_t n_args, size_t n_kw,
                                     const mp_obj_t *args) {
-    enum { ARG_miso, ARG_mosi, ARG_sclk, ARG_host };
-    static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_miso, MP_ARG_INT | MP_ARG_REQUIRED },
-        { MP_QSTR_mosi, MP_ARG_INT | MP_ARG_REQUIRED },
-        { MP_QSTR_sclk, MP_ARG_INT | MP_ARG_REQUIRED },
-        { MP_QSTR_host, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = SPI2_HOST} },
-    };
-
-    mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all_kw_array(n_args, n_kw, args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
+    
+    // Use simple positional argument parsing instead of mp_arg_parse_all_kw_array
+    if (n_args < 3 || n_args > 4) {
+        mp_raise_TypeError(MP_ERROR_TEXT("SPIBus requires 3-4 arguments: miso, mosi, sclk [, host]"));
+    }
+    
+    // Get required arguments
+    int miso_pin = mp_obj_get_int(args[0]);
+    int mosi_pin = mp_obj_get_int(args[1]);
+    int sclk_pin = mp_obj_get_int(args[2]);
+    
+    // Optional host argument (defaults to SPI2_HOST)
+    int host = (n_args >= 4) ? mp_obj_get_int(args[3]) : SPI2_HOST;
+    
+    // Validate GPIO pins for ESP32-S3
+    if (miso_pin < -1 || miso_pin > 48 || 
+        mosi_pin < -1 || mosi_pin > 48 || 
+        sclk_pin < -1 || sclk_pin > 48) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid GPIO pin number"));
+    }
+    
+    // Validate SPI host
+    if (host < SPI1_HOST || host > SPI3_HOST) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid SPI host"));
+    }
 
     esp_spi_bus_obj_t *self = mp_obj_malloc(esp_spi_bus_obj_t, type);
     self->base.type = &esp_spi_bus_type;
-    self->miso_io_num = parsed_args[ARG_miso].u_int;
-    self->mosi_io_num = parsed_args[ARG_mosi].u_int;
-    self->sclk_io_num = parsed_args[ARG_sclk].u_int;
-    self->host = parsed_args[ARG_host].u_int;
+    self->miso_io_num = miso_pin;
+    self->mosi_io_num = mosi_pin;
+    self->sclk_io_num = sclk_pin;
+    self->host = host;
     self->initialized = false;
 
     return MP_OBJ_FROM_PTR(self);
@@ -66,22 +82,17 @@ static mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_m
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(args[0]);
 
     if (!self->initialized) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("spi_bus_initialize failed"));
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("SPI bus not initialized"));
     }
 
-    enum {
-        ARG_cs,
-        ARG_ds,
-        ARG_freq,
-        ARG_mode,
-    };
-
-    static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_cs, MP_ARG_INT | MP_ARG_REQUIRED },
-        { MP_QSTR_ds, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = -1} },
-        { MP_QSTR_freq, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 40000000} },
-        { MP_QSTR_mode, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 0} },
-    };
+    // Simple positional parsing instead of mp_arg_parse_all
+    if (n_args < 2) {
+        mp_raise_TypeError(MP_ERROR_TEXT("add_device requires at least cs pin"));
+    }
+    
+    int cs_pin = mp_obj_get_int(args[1]);
+    int freq = (n_args >= 3) ? mp_obj_get_int(args[2]) : 40000000;  // 40MHz default
+    int mode = (n_args >= 4) ? mp_obj_get_int(args[3]) : 0;         // Mode 0 default
 
     mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all(n_args - 1, args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
