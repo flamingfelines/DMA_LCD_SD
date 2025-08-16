@@ -12,6 +12,17 @@
 
 static const char *TAG = "esp_sd";
 
+typedef struct esp_sd_obj_t {
+    mp_obj_base_t base;
+    sdmmc_card_t *card;
+    mp_obj_t bus;           
+    int cs_pin;             
+    bool initialized;
+    uint32_t block_count;
+    uint32_t block_size;
+    sdspi_dev_handle_t spi_handle;
+} esp_sd_obj_t;
+
 extern const mp_obj_type_t esp_sd_type;
 
 static void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
@@ -21,38 +32,32 @@ static void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kin
 }
 
 static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args, mp_map_t *kw_args) {
-    enum { ARG_bus, ARG_cs };
-    static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_bus, MP_ARG_OBJ | MP_ARG_REQUIRED },
-        { MP_QSTR_cs, MP_ARG_INT | MP_ARG_REQUIRED },
-    };
-    mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all(n_args, args, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
+    if (n_args != 2) {
+        mp_raise_TypeError(MP_ERROR_TEXT("Use positional arguments: SDCard(bus, cs_pin)"));
+    }
     
-    // Validate bus object first
-    if (!mp_obj_is_type(parsed_args[ARG_bus].u_obj, &esp_spi_bus_type)) {
+    // Add bus type validation
+    if (!mp_obj_is_type(args[0], &esp_spi_bus_type)) {
         mp_raise_ValueError(MP_ERROR_TEXT("Expected esp_spi.SPIBus object"));
     }
-
-    // Validate CS pin range (adjust range as needed for your platform)
-    int cs_pin = parsed_args[ARG_cs].u_int;
-    if (cs_pin < 0 || cs_pin > 45) {  // ESP32 GPIO range example
+    
+    // CS pin validation
+    int cs_pin = mp_obj_get_int(args[1]);
+    if (cs_pin < 0 || cs_pin > 48) {  // ESP32-S3 range
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid CS pin number"));
     }
     
-    // Now safe to log
-    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d",
-             parsed_args[ARG_bus].u_obj, cs_pin);
-
-    esp_sd_obj_t *self = mp_obj_malloc(esp_sd_obj_t, type);
-    self->card = NULL;
+    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d", args[0], cs_pin);
+    
+    esp_sd_obj_t *self = mp_obj_malloc(esp_sd_obj_t, &esp_sd_type);
+    self->bus = args[0];
+    self->cs_pin = cs_pin;
     self->initialized = false;
-    self->bus = parsed_args[ARG_bus].u_obj;
-    self->cs_pin = parsed_args[ARG_cs].u_int;
+    self->card = NULL;
     self->block_count = 0;
-    self->block_size = 512;  // Standard SD block size
-    self->spi_handle = -1;   // Invalid handle initially
-
+    self->block_size = 512;
+    self->spi_handle = -1;
+    
     return MP_OBJ_FROM_PTR(self);
 }
 
