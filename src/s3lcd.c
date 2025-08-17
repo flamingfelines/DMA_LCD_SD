@@ -70,6 +70,8 @@
 
 #define TAG "S3LCD"
 
+volatile bool lcd_panel_active = false;
+
 #define swap_bytes(val) (((val >> 8) | (val << 8)) & 0xFFFF)
 #define swap_int16_t(a, b) \
     {                       \
