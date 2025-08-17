@@ -2619,38 +2619,39 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
     
+    mp_printf(&mp_plat_print, "DMA: row=%d, rows=%d, len=%d\n", row, rows, (int)len);
+    mp_printf(&mp_plat_print, "First pixel value: 0x%04X\n", src[0]);
+    
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
             dma_buffer[i] = swap_bytes(src[i]);
         }
+        mp_printf(&mp_plat_print, "After swap - first pixel: 0x%04X\n", dma_buffer[0]);
     } else {
         memcpy(self->dma_buffer, src, len * sizeof(uint16_t));
     }
     
     lcd_panel_active = true;
     
-    // For ESP-IDF 5.4.2, coordinates should be (x1, y1, x2, y2) where x2,y2 are exclusive
     esp_err_t ret = esp_lcd_panel_draw_bitmap(self->panel_handle, 
         0, row, 
-        self->width, row + rows, 
+        self->width, row + rows,
         self->dma_buffer);
         
+    mp_printf(&mp_plat_print, "draw_bitmap returned: %d\n", ret);
+    
     if (ret != ESP_OK) {
-        mp_printf(&mp_plat_print, "esp_lcd_panel_draw_bitmap failed: %d\n", ret);
+        mp_printf(&mp_plat_print, "draw_bitmap failed: %d\n", ret);
         lcd_panel_active = false;
         return;
     }
     
-    // Simple timeout instead of infinite wait
     int timeout = 1000;
     while (lcd_panel_active && timeout-- > 0) {
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
     
-    if (timeout <= 0) {
-        mp_printf(&mp_plat_print, "DMA timeout\n");
-        lcd_panel_active = false;
-    }
+    mp_printf(&mp_plat_print, "DMA completed, timeout remaining: %d\n", timeout);
 }
 
 ///
