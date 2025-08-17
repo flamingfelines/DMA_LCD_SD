@@ -2618,17 +2618,40 @@ unsigned char reverse(unsigned char b) {
 }
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
+    
+    mp_printf(&mp_plat_print, "DMA display: row=%d, rows=%d, len=%d\n", row, rows, (int)len);
+    
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
-            *dma_buffer++ = _swap_bytes(src[i]);
+            dma_buffer[i] = swap_bytes(src[i]);
         }
     } else {
-        memcpy(self->dma_buffer, src, len * 2);
+        memcpy(self->dma_buffer, src, len * sizeof(uint16_t));
     }
+    
     lcd_panel_active = true;
-    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(self->panel_handle, 0, row, self->width - 1, row + rows - 1, self->dma_buffer));
-    while (lcd_panel_active) {
-        // Ideally, yield or wait with an event, not busy wait
+    
+    // For ESP-IDF 5.4.2, coordinates should be (x1, y1, x2, y2) where x2,y2 are exclusive
+    esp_err_t ret = esp_lcd_panel_draw_bitmap(self->panel_handle, 
+        0, row, 
+        self->width, row + rows, 
+        self->dma_buffer);
+        
+    if (ret != ESP_OK) {
+        mp_printf(&mp_plat_print, "esp_lcd_panel_draw_bitmap failed: %d\n", ret);
+        lcd_panel_active = false;
+        return;
+    }
+    
+    // Simple timeout instead of infinite wait
+    int timeout = 1000;
+    while (lcd_panel_active && timeout-- > 0) {
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+    
+    if (timeout <= 0) {
+        mp_printf(&mp_plat_print, "DMA timeout\n");
+        lcd_panel_active = false;
     }
 }
 
@@ -2640,6 +2663,8 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
 static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     
+    mp_printf(&mp_plat_print, "show() starting\n");
+    
     if (self->frame_buffer == NULL) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Display not initialized"));
     }
@@ -2647,6 +2672,13 @@ static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
     if (self->dma_rows == 0) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Invalid DMA rows configuration"));
     }
+    
+    if (self->panel_handle == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Panel not initialized"));
+    }
+    
+    mp_printf(&mp_plat_print, "Dimensions: %dx%d, DMA rows: %d\n", 
+              self->width, self->height, self->dma_rows);
     
     uint16_t *fb = self->frame_buffer;
     
@@ -2656,10 +2688,14 @@ static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
                                (self->height - y);
         size_t pixels = rows_to_send * self->width;
         
+        mp_printf(&mp_plat_print, "Sending row %d, %d rows, %d pixels\n", 
+                  y, rows_to_send, (int)pixels);
+        
         s3lcd_dma_display(self, fb, y, rows_to_send, pixels);
         fb += pixels;
     }
     
+    mp_printf(&mp_plat_print, "show() completed\n");
     return mp_const_none;
 }
 
