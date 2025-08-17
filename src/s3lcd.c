@@ -81,8 +81,6 @@
 #define ABS(N) (((N) < 0) ? (-(N)) : (N))
 #define mp_hal_delay_ms(delay) (mp_hal_delay_us(delay * 1000))
 
-static volatile bool lcd_panel_active = false;
-
 //
 // Default s3lcd display orientation tables
 // can be overridden during init()
@@ -477,13 +475,13 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_pixel_obj, 4, 5, s3lcd_pixel);
 static void line(s3lcd_obj_t *self, int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t color, uint8_t alpha) {
     bool steep = ABS(y1 - y0) > ABS(x1 - x0);
     if (steep) {
-        _swap_int16_t(x0, y0);
-        _swap_int16_t(x1, y1);
+        swap_int16_t(x0, y0);
+        swap_int16_t(x1, y1);
     }
 
     if (x0 > x1) {
-        _swap_int16_t(x0, x1);
-        _swap_int16_t(y0, y1);
+        swap_int16_t(x0, x1);
+        swap_int16_t(y0, y1);
     }
 
     int16_t dx = x1 - x0, dy = ABS(y1 - y0);
@@ -1114,7 +1112,7 @@ static mp_obj_t s3lcd_bitmap_from_module(size_t n_args, const mp_obj_t *args) {
             if (alpha != 255) {
                 color = alpha_blend_565(color, *b, alpha);
             }
-            *b++ = _swap_bytes(color);
+            *b++ = swap_bytes(color);
         }
     }
     return mp_const_none;
