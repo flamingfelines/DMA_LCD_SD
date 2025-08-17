@@ -2610,12 +2610,10 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 //  row: row to start at
 //  rows: number of rows to send
 //  len: pixel data length to send
-unsigned char reverse(unsigned char b) {
-   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-   return b;
+static inline uint16_t swap_bytes(uint16_t value) {
+    return __builtin_bswap16(value);
 }
+
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
     
