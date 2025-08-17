@@ -1495,7 +1495,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         m_free(self->frame_buffer);
     }
     
-    mp_printf(&mp_plat_print, "Allocating frame buffer: %zu bytes\n", self->frame_buffer_size);
+    mp_printf(&mp_plat_print, "Allocating frame buffer: %d bytes\n", (int)self->frame_buffer_size);
     self->frame_buffer = m_malloc(self->frame_buffer_size);
     if (self->frame_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
@@ -1511,7 +1511,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     }
     
     size_t dma_buffer_size = self->width * self->dma_rows * sizeof(uint16_t);
-    mp_printf(&mp_plat_print, "Allocating DMA buffer: %zu bytes\n", dma_buffer_size);
+    mp_printf(&mp_plat_print, "Allocating DMA buffer: %d bytes\n", (int)dma_buffer_size);
     self->dma_buffer = m_malloc(dma_buffer_size);
     if (self->dma_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
@@ -2616,8 +2616,6 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
     
-    mp_printf(&mp_plat_print, "DMA display: row=%d, rows=%d, len=%d\n", row, rows, (int)len);
-    
     if (self->swap_color_bytes) {
         for (size_t i = 0; i < len; i++) {
             dma_buffer[i] = swap_bytes(src[i]);
@@ -2674,9 +2672,6 @@ static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Panel not initialized"));
     }
     
-    mp_printf(&mp_plat_print, "Dimensions: %dx%d, DMA rows: %d\n", 
-              self->width, self->height, self->dma_rows);
-    
     uint16_t *fb = self->frame_buffer;
     
     for (int y = 0; y < self->height; y += self->dma_rows) {
@@ -2684,9 +2679,6 @@ static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
                                self->dma_rows : 
                                (self->height - y);
         size_t pixels = rows_to_send * self->width;
-        
-        mp_printf(&mp_plat_print, "Sending row %d, %d rows, %d pixels\n", 
-                  y, rows_to_send, (int)pixels);
         
         s3lcd_dma_display(self, fb, y, rows_to_send, pixels);
         fb += pixels;
