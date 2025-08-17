@@ -70,8 +70,8 @@
 
 #define TAG "S3LCD"
 
-#define _swap_bytes(val) (((val >> 8) | (val << 8)) & 0xFFFF)
-#define _swap_int16_t(a, b) \
+#define swap_bytes(val) (((val >> 8) | (val << 8)) & 0xFFFF)
+#define swap_int16_t(a, b) \
     {                       \
         int16_t t = a;      \
         a = b;              \
@@ -2610,9 +2610,6 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 //  row: row to start at
 //  rows: number of rows to send
 //  len: pixel data length to send
-static inline uint16_t swap_bytes(uint16_t value) {
-    return __builtin_bswap16(value);
-}
 
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
