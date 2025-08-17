@@ -2868,7 +2868,6 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->dma_rows = args[ARG_dma_rows].u_int;
     self->dma_buffer_size = self->dma_rows * longest_axis * 2;
     self->dma_buffer = heap_caps_malloc(self->dma_buffer_size, MALLOC_CAP_DMA);
-    self->dma_buffer = heap_caps_malloc(self->dma_buffer_size, MALLOC_CAP_DMA);
     if (self->dma_buffer == NULL) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
     }
