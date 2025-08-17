@@ -1501,7 +1501,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     
     // Allocate DMA buffer
     if (self->dma_buffer != NULL) {
-        m_free(self->dma_buffer);
+        heap_caps_free(self->dma_buffer);  // Use heap_caps_free instead of m_free
     }
     
     if (self->dma_rows == 0) {
