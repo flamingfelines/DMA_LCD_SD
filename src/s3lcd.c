@@ -81,6 +81,8 @@
 #define ABS(N) (((N) < 0) ? (-(N)) : (N))
 #define mp_hal_delay_ms(delay) (mp_hal_delay_us(delay * 1000))
 
+static volatile bool lcd_panel_active = false;
+
 //
 // Default s3lcd display orientation tables
 // can be overridden during init()
