@@ -239,10 +239,15 @@ static void _setpixel(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t color,
 // }
 
 static void _fill(s3lcd_obj_t *self, uint16_t color) {
+    mp_printf(&mp_plat_print, "_fill() called with color: 0x%04X\n", color);
+    mp_printf(&mp_plat_print, "Filling %d pixels\n", self->width * self->height);
+    
     uint16_t *b = self->frame_buffer;
     for (size_t i = 0; i < self->width * self->height; ++i) {
         *b++ = color;
     }
+    
+    mp_printf(&mp_plat_print, "_fill() completed\n");
 }
 
 static void _fill_rect(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color, uint8_t alpha) {
