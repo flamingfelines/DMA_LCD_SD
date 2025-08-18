@@ -2616,6 +2616,13 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 //  rows: number of rows to send
 //  len: pixel data length to send
 
+unsigned char reverse(unsigned char b) {
+   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+   return b;
+}
+
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
     uint16_t *dma_buffer = self->dma_buffer;
     
@@ -2661,34 +2668,18 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
 
 static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-    
-    mp_printf(&mp_plat_print, "show() starting\n");
-    
-    if (self->frame_buffer == NULL) {
-        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Display not initialized"));
-    }
-    
-    if (self->dma_rows == 0) {
-        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Invalid DMA rows configuration"));
-    }
-    
-    if (self->panel_handle == NULL) {
-        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Panel not initialized"));
-    }
-    
+    size_t pixels = self->dma_rows * self->width;
     uint16_t *fb = self->frame_buffer;
-    
-    for (int y = 0; y < self->height; y += self->dma_rows) {
-        uint16_t rows_to_send = (y + self->dma_rows <= self->height) ? 
-                               self->dma_rows : 
-                               (self->height - y);
-        size_t pixels = rows_to_send * self->width;
-        
-        s3lcd_dma_display(self, fb, y, rows_to_send, pixels);
+    for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
+        s3lcd_dma_display(self, fb, y, self->dma_rows, pixels);
         fb += pixels;
     }
-    
-    mp_printf(&mp_plat_print, "show() completed\n");
+
+    if (self->height % self->dma_rows != 0) {
+        size_t remaining = self->height % self->dma_rows;
+        s3lcd_dma_display(self, fb, (self->height - remaining), remaining, remaining * self->width);
+    }
+
     return mp_const_none;
 }
 
