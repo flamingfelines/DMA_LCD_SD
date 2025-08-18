@@ -1433,9 +1433,6 @@ static void custom_init(s3lcd_obj_t *self) {
 static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
     
-    mp_printf(&mp_plat_print, "s3lcd_init() starting\n");
-    mp_printf(&mp_plat_print, "width: %d, height: %d\n", self->width, self->height);
-    
     if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an SPI bus"));
     }
