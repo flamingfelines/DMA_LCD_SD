@@ -86,7 +86,6 @@ static void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_p
 
 static const mp_rom_map_elem_t esp_spi_bus_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&esp_spi_bus_init_obj) },
-    { MP_ROM_QSTR(MP_QSTR_add_device), MP_ROM_PTR(&esp_spi_bus_add_device_obj) },
 };
 static MP_DEFINE_CONST_DICT(esp_spi_bus_locals_dict, esp_spi_bus_locals_dict_table);
 
