@@ -78,60 +78,6 @@ static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(esp_spi_bus_init_obj, esp_spi_bus_init);
 
-static mp_obj_t esp_spi_bus_add_device(size_t n_args, const mp_obj_t *args, mp_map_t *kw_args) {
-    esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-
-    if (!self->initialized) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("SPI bus not initialized"));
-    }
-
-    // Simple positional parsing instead of mp_arg_parse_all
-    if (n_args < 2) {
-        mp_raise_TypeError(MP_ERROR_TEXT("add_device requires at least cs pin"));
-    }
-    
-    int cs_pin = mp_obj_get_int(args[1]);
-    int freq = (n_args >= 3) ? mp_obj_get_int(args[2]) : 40000000;  // 40MHz default
-    int mode = (n_args >= 4) ? mp_obj_get_int(args[3]) : 0;         // Mode 0 default
-
-    mp_arg_val_t parsed_args[MP_ARRAY_SIZE(allowed_args)];
-    mp_arg_parse_all(n_args - 1, args + 1, kw_args, MP_ARRAY_SIZE(allowed_args), allowed_args, parsed_args);
-
-    spi_device_interface_config_t devcfg = {
-        .command_bits = 0,
-        .address_bits = 0,
-        .dummy_bits = 0,
-        .mode = parsed_args[ARG_mode].u_int,
-        .duty_cycle_pos = 128, // default
-        .cs_ena_posttrans = 3,
-        .clock_speed_hz = parsed_args[ARG_freq].u_int,
-        .input_delay_ns = 0,
-        .spics_io_num = parsed_args[ARG_cs].u_int,
-        .flags = 0,
-        .queue_size = 7,
-        .pre_cb = NULL,
-        .post_cb = NULL,
-    };
-
-    // If ds pin is provided and valid, configure it here (optional):
-    if (parsed_args[ARG_ds].u_int >= 0) {
-        // TODO: If needed, you can set up GPIO here or pass to devcfg.flags/custom callbacks
-        // For now, just set it as a comment or store for future use
-    }
-
-    spi_device_handle_t spi_dev_handle;
-    esp_err_t ret = spi_bus_add_device(self->host, &devcfg, &spi_dev_handle);
-    if (ret != ESP_OK) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("spi_bus_add_device failed"));
-    }
-
-    esp_spi_device_obj_t *dev = mp_obj_malloc(esp_spi_device_obj_t, &esp_spi_device_type);
-    dev->spi_dev_handle = spi_dev_handle;
-
-    return MP_OBJ_FROM_PTR(dev);
-}
-static MP_DEFINE_CONST_FUN_OBJ_KW(esp_spi_bus_add_device_obj, 1, esp_spi_bus_add_device);
-
 // Device object print
 static void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_spi_device_obj_t *self = MP_OBJ_TO_PTR(self_in);
