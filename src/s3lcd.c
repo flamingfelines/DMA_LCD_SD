@@ -1,5 +1,6 @@
 /*
  * Modifications and additions Copyright (c) 2020-2023 Russ Hughes
+ * Additional Modifications and additions Copyright (c) 2025 Flamingfelines
  *
  * This file licensed under the MIT License and incorporates work covered by
  * the following copyright and permission notice:
