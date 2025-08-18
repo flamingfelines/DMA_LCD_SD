@@ -4,7 +4,7 @@
 
 ## Overview
 
-This is a driver for MicroPython for devices using the esp_lcd SPI interface, the i80 bus is legacy code from the previous driver and non-functioning. The driver is written in C and is based on [devbis' st7789_mpy driver.](https://github.com/devbis/st7789_mpy)
+This is a driver for MicroPython for devices using the esp_lcd SPI interface, the i80 bus code is legacy code from the previous driver and non-functioning. The driver is written in C and is based on [devbis' st7789_mpy driver.](https://github.com/devbis/st7789_mpy)
 
 Russ Hughes modified the original driver to add the following features:
 
@@ -22,12 +22,16 @@ Russ Hughes modified the original driver to add the following features:
 - Several example programs. The example programs require a tft_config.py module to be present. Some examples require a tft_buttons.py module as well. You may need to modify the tft_buttons.py module to match the pins your device uses.
 
 I modified the original s3lcd driver to accept a general SPI object instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
-- debug test w/ tft_config configuration is provided for:
+I also added esp_spi, a C-based driver that creates a general-use SPI bus using ESP_IDF
+and esp_sd, a a C-based driver that initiates an SD card using the generap SPI bus above and wraps it to be used by vfs functions. 
+- debug test w/ tft_config and sd_card_config is provided for:
   - XIAO ESP32-S3 W/ ST7789 DISPLAY
 
 ## Pre-compiled firmware
 
 The firmware directory contains pre-compiled MicroPython v1.22.2 firmware compiled using ESP IDF v5.4.2. In addition, the firmware includes the C driver and several frozen Python font files. See the README.md file in the fonts folder for more information about the font files.
+
+(To compile your own firmware, you will likely have to increase partition size slightly, I increased mine to 2.5 and that was enough.)
 
 ## Driver API
 
@@ -38,22 +42,35 @@ Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Py
 ## ESP_SPI Methods
 Create and initialize the SPI bus
     - esp_spi.SPIBus(MISO_PIN, MOSI_PIN, SCLK_PIN)
-
     *only takes positional arguments
     
+      - init: initiliazes SPI Bus. 
+      
+      - print: prints SPI handle
+
+## ESP_SD Methods
+Create and initialize SD card #MUST BE DONE AFTER DISPLAY FOR STABILITY
+    - esp_sd.SDCard(spi, int(SD_CS_PIN))
+    * only takes positional arguments
+      - init: initiliazes SD Card. 
+      
+      - print: prints device handle
+
+    Once initialized, you can pass the sd_card object to vfs for standard functions like: vfs.mount(sd_card, '/sd')
+
 ## SPI_BUS Methods
 
 - `s3lcd.SPI_BUS(spi_bus, spi_host, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
 
-  This method sets the interface configuration of an SPI bus for the ESPLCD driver. The ESPLCD driver will automatically initialize and deinitialize the SPI bus.
+  This method sets an interface configuration of the SPI bus for the ESPLCD driver. The ESPLCD driver will automatically initialize and deinitialize the SPI bus.
 
-    ### Required Parameters:
-
+    ### Required positional arguments:
     - `spi_bus' ESP_SPI object to use
     - 'spi_host' integer matching whatever host you created the machine.SPI object with.
     - `dc` D/C pin number
-    - `cs` CS pin number
+
     ### Optional Parameters:
+    - `cs` CS pin number (This is positional, not keyword)
     - `spi_mode` Traditional SPI mode (0~3)
     - `pclk` Frequency of pixel clock (Defaults to 40MHz)
     - `lcd_cmd_bits` Bit-width of LCD command
@@ -352,7 +369,7 @@ Compile the cross compiler if you haven't already
 make -C micropython/mpy-cross
 ```
 
-## ESP32 MicroPython 1.14 thru 1.19
+## ESP32 MicroPython 1.14 thru 1.19 
 
 Change to the ESP32 port directory
 
@@ -360,7 +377,7 @@ Change to the ESP32 port directory
 cd micropython/ports/esp32
 ```
 
-Compile the module with specified USER_C_MODULES dir
+Compile the module with specified USER_C_MODULES dir.
 
 ```
 make USER_C_MODULES=../../../../s3lcd/src/micropython.cmake clean submodules all
@@ -379,7 +396,7 @@ Upload the new firmware
 make USER_C_MODULES=../../../../s3lcd/src/micropython.cmake deploy
 ```
 
-## ESP32 MicroPython 1.20 and later
+## ESP32 MicroPython 1.20 and later **use full addresses for files if its not working.**
 
 
 Change to the ESP32 port directory, and build the firmware
@@ -406,7 +423,7 @@ make \
     erase deploy
 ```
 
-## RP2040 MicroPython 1.20 and later
+## RP2040 MicroPython 1.20 and later **Untested with this driver**
 
 Change to the RP2 port directory, and build the firmware
 
@@ -421,10 +438,11 @@ make \
 
 Flash the firmware.uf2 file from the build-${BOARD} directory to your device.
 
-## Thanks go out to:
+## Thanks from Russ go out to:
 
 - https://github.com/devbis for the original driver this is based on.
 - https://github.com/hklang10 for letting me know of the new mp_raise_ValueError().
 - https://github.com/aleggon for finding the correct offsets for 240x240 displays and for discovering issues compiling STM32 ports.
 
--- Russ
+## Additional Thanks:
+  - https://github.com/russhughes for providing such a robust lcd driver. I learned a lot about custom firmware making this driver for my project. 
