@@ -239,15 +239,10 @@ static void _setpixel(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t color,
 // }
 
 static void _fill(s3lcd_obj_t *self, uint16_t color) {
-    mp_printf(&mp_plat_print, "_fill() called with color: 0x%04X\n", color);
-    mp_printf(&mp_plat_print, "Filling %d pixels\n", self->width * self->height);
-    
     uint16_t *b = self->frame_buffer;
     for (size_t i = 0; i < self->width * self->height; ++i) {
         *b++ = color;
     }
-    
-    mp_printf(&mp_plat_print, "_fill() completed\n");
 }
 
 static void _fill_rect(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color, uint8_t alpha) {
@@ -1457,7 +1452,6 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     
     // Use the IO handle from the bus (don't delete it!)
     self->io_handle = config->io_handle;
-    mp_printf(&mp_plat_print, "Using IO handle: %p\n", self->io_handle);
     
     // Create the ST7789 panel
     esp_lcd_panel_handle_t panel_handle = NULL;
@@ -1466,25 +1460,22 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         .color_space = self->color_space,
         .bits_per_pixel = 16,
     };
-    
-    mp_printf(&mp_plat_print, "Creating ST7789 panel\n");
     esp_err_t ret = esp_lcd_new_panel_st7789(self->io_handle, &panel_config, &panel_handle);
     if (ret != ESP_OK) {
-        mp_printf(&mp_plat_print, "Failed to create ST7789 panel: %d\n", ret);
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to create ST7789 panel"));
+        mp_printf(&mp_plat_print, "Failed to create LCD panel: %d\n", ret);
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to create LCD panel"));
     }
-    
     self->panel_handle = panel_handle;
-    mp_printf(&mp_plat_print, "Panel handle created: %p\n", self->panel_handle);
     
     // Initialize the panel
-    mp_printf(&mp_plat_print, "Resetting and initializing panel\n");
     esp_lcd_panel_reset(panel_handle);
-    
+
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
+        
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
         esp_lcd_panel_disp_on_off(panel_handle, true);
+        
 #endif
     } else {
         custom_init(self);
@@ -1497,8 +1488,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     if (self->frame_buffer != NULL) {
         m_free(self->frame_buffer);
     }
-    
-    mp_printf(&mp_plat_print, "Allocating frame buffer: %d bytes\n", (int)self->frame_buffer_size);
+
     self->frame_buffer = m_malloc(self->frame_buffer_size);
     if (self->frame_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
@@ -1514,15 +1504,11 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     }
     
     size_t dma_buffer_size = self->width * self->dma_rows * sizeof(uint16_t);
-    mp_printf(&mp_plat_print, "Allocating DMA buffer: %d bytes\n", (int)dma_buffer_size);
     self->dma_buffer = m_malloc(dma_buffer_size);
     if (self->dma_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
     }
-    
     memset(self->frame_buffer, 0, self->frame_buffer_size);
-    
-    mp_printf(&mp_plat_print, "s3lcd_init() completed successfully\n");
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(s3lcd_init_obj, s3lcd_init);
