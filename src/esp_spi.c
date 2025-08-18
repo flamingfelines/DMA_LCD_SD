@@ -41,6 +41,14 @@ static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid SPI host"));
     }
 
+    // Clean up any existing SPI bus on this host
+    esp_err_t ret = spi_bus_free(host);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        // ESP_ERR_INVALID_STATE means the bus wasn't initialized, which is fine
+        // Other errors might indicate a more serious problem
+        mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("Failed to free existing SPI bus: %d"), ret);
+    }
+
     esp_spi_bus_obj_t *self = mp_obj_malloc(esp_spi_bus_obj_t, type);
     self->base.type = &esp_spi_bus_type;
     self->miso_io_num = miso_pin;
