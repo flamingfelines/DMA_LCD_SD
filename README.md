@@ -1,10 +1,10 @@
 # ESP-IDF General DMA-Enabled SPI MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays used in tandem with SD Cards. 
 
-****Warning:**** This is VERY MUCH a work in progress and is NOT complete!
+****Warning:**** Does not work with i80 lcd screens, only SPI. Only tested on XIAO ESP32-S3 and ST7789 display. 
 
 ## Overview
 
-This is a driver for MicroPython for devices using the esp_lcd intel 8080 8-bit parallel bus and SPI interfaces. The driver is written in C and is based on [devbis' st7789_mpy driver.](https://github.com/devbis/st7789_mpy)
+This is a driver for MicroPython for devices using the esp_lcd SPI interface, the i80 bus is legacy code from the previous driver and non-functioning. The driver is written in C and is based on [devbis' st7789_mpy driver.](https://github.com/devbis/st7789_mpy)
 
 Russ Hughes modified the original driver to add the following features:
 
@@ -21,48 +21,26 @@ Russ Hughes modified the original driver to add the following features:
 - Drawing and rotating Polygons and filled Polygons.
 - Several example programs. The example programs require a tft_config.py module to be present. Some examples require a tft_buttons.py module as well. You may need to modify the tft_buttons.py module to match the pins your device uses.
 
-I modified the original s3lcd driver to accept machine.SPI instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
-- tft_config.py and tft_buttons.py configuration examples are provided for:
-  - XIAO ESP32-S3 W/ ST7789 DISPLAY (WIP)
+I modified the original s3lcd driver to accept a general SPI object instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
+- debug test w/ tft_config configuration is provided for:
+  - XIAO ESP32-S3 W/ ST7789 DISPLAY
 
 ## Pre-compiled firmware
 
-The firmware directory contains pre-compiled MicroPython v1.20.0 firmware compiled using ESP IDF v4.4.4. In addition, the firmware includes the C driver and several frozen Python font files. See the README.md file in the fonts folder for more information about the font files.
+The firmware directory contains pre-compiled MicroPython v1.22.2 firmware compiled using ESP IDF v5.4.2. In addition, the firmware includes the C driver and several frozen Python font files. See the README.md file in the fonts folder for more information about the font files.
 
 ## Driver API
 
 Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Python dictionary.
 
 ## I80_BUS Methods
+  *NON-FUNCTIONING*
+## ESP_SPI Methods
+Create and initialize the SPI bus
+    - esp_spi.SPIBus(MISO_PIN, MOSI_PIN, SCLK_PIN)
 
-- `s3lcd.I80_BUS(data, dc, wr, {rd, cs, pclk, bus_width, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_cmd_level, dc_dummy_level, dc_data_level, cs_active_high, reverse_color_bits, swap_color_bytes, pclk_active_neg, pclk_idle_low})`
-
-  This method sets the interface configuration of an intel 8080 parallel bus for the ESPLCD driver. The ESPLCD driver will automatically initialize and deinitialize the I80 bus.
-
-    ### Required Parameters:
-
-    - `data` tuple of pin numbers attached to the data bus in least to most significant bit order
-    - `dc` data/command pin number
-    - `wr` write pin number
-
-    ### Optional Parameters:
-
-    - `rd` read pin number
-    - `cs` chip select pin number
-    - `pclk pixel` clock frequency in Hz
-    - `bus_width` bus width in bits
-    - `lcd_cmd_bits` number of bits used to send commands to the LCD
-    - `lcd_param_bits` number of bits used to send parameters to the LCD
-    - `dc_idle_level` D/C pin level when idle
-    - `dc_cmd_level` D/C pin level when sending commands
-    - `dc_dummy_level` D/C pin level when sending dummy data
-    - `dc_data_level`  D/C pin level when sending data
-    - `cs_active_high` CS pin level when active
-    - `reverse_color_bits` reverse the order of color bits
-    - `swap_color_bytes` swap the order of color bytes
-    - `pclk_active_neg` pixel clock is active negative
-    - `pclk_idle_low` pixel clock is idle low
-
+    *only takes positional arguments
+    
 ## SPI_BUS Methods
 
 - `s3lcd.SPI_BUS(spi_bus, spi_host, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
@@ -71,14 +49,13 @@ Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Py
 
     ### Required Parameters:
 
-    - `spi_bus' machine.SPI object to use
-    - `dc` D/C pin number
+    - `spi_bus' ESP_SPI object to use
     - 'spi_host' integer matching whatever host you created the machine.SPI object with.
-    ### Optional Parameters:
-
+    - `dc` D/C pin number
     - `cs` CS pin number
+    ### Optional Parameters:
     - `spi_mode` Traditional SPI mode (0~3)
-    - `pclk` Frequency of pixel clock
+    - `pclk` Frequency of pixel clock (Defaults to 40MHz)
     - `lcd_cmd_bits` Bit-width of LCD command
     - `lcd_param_bits` Bit-width of LCD parameter
     - `dc_idle_level`  D/C pin level when idle
