@@ -1492,17 +1492,19 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
     }
     
-    // Allocate DMA buffer
+    // Allocate DMA buffer with proper alignment and size
     if (self->dma_buffer != NULL) {
-        heap_caps_free(self->dma_buffer);  // Use heap_caps_free instead of m_free
+        heap_caps_free(self->dma_buffer);
     }
     
     if (self->dma_rows == 0) {
-        self->dma_rows = 10; // Default
+        self->dma_rows = 60; // Larger chunks = fewer transactions
     }
     
     size_t dma_buffer_size = self->width * self->dma_rows * sizeof(uint16_t);
-    self->dma_buffer = m_malloc(dma_buffer_size);
+    dma_buffer_size = (dma_buffer_size + 3) & ~3; // 4-byte align
+    
+    self->dma_buffer = heap_caps_aligned_alloc(4, dma_buffer_size, MALLOC_CAP_DMA);
     if (self->dma_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
     }
