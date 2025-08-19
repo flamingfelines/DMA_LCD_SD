@@ -9,6 +9,7 @@
 #include "driver/spi_common.h"
 #include "esp_log.h"
 #include "esp_spi.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "esp_sd";
 
@@ -16,7 +17,8 @@ typedef struct esp_sd_obj_t {
     mp_obj_base_t base;
     sdmmc_card_t *card;
     mp_obj_t bus;           
-    int cs_pin;             
+    int cs_pin;
+    int freq_mhz;           // Add frequency field
     bool initialized;
     uint32_t block_count;
     uint32_t block_size;
@@ -27,13 +29,13 @@ extern const mp_obj_type_t esp_sd_type;
 
 static void esp_sd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_sd_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<esp_sd.SDCard initialized=%d blocks=%lu block_size=%lu cs=%d>", 
-              self->initialized, self->block_count, self->block_size, self->cs_pin);
+    mp_printf(print, "<esp_sd.SDCard initialized=%d blocks=%lu block_size=%lu cs=%d freq=%dMHz>", 
+              self->initialized, self->block_count, self->block_size, self->cs_pin, self->freq_mhz);
 }
 
 static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args, mp_map_t *kw_args) {
-    if (n_args != 2) {
-        mp_raise_TypeError(MP_ERROR_TEXT("Use positional arguments: SDCard(bus, cs_pin)"));
+    if (n_args < 2 || n_args > 3) {
+        mp_raise_TypeError(MP_ERROR_TEXT("Use: SDCard(bus, cs_pin, freq_mhz=20)"));
     }
     
     // Add bus type validation
@@ -47,11 +49,21 @@ static mp_obj_t esp_sd_make_new(const mp_obj_type_t *type, size_t n_args, size_t
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid CS pin number"));
     }
     
-    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d", args[0], cs_pin);
+    // Get frequency (default 20 MHz)
+    int freq_mhz = 20;
+    if (n_args >= 3) {
+        freq_mhz = mp_obj_get_int(args[2]);
+        if (freq_mhz < 1 || freq_mhz > 80) {  // ESP32-S3 SPI maximum
+            mp_raise_ValueError(MP_ERROR_TEXT("Frequency must be 1-80 MHz"));
+        }
+    }
+    
+    ESP_LOGI(TAG, "esp_sd_make_new called, bus ptr=%p, cs=%d, freq=%dMHz", args[0], cs_pin, freq_mhz);
     
     esp_sd_obj_t *self = mp_obj_malloc(esp_sd_obj_t, &esp_sd_type);
     self->bus = args[0];
     self->cs_pin = cs_pin;
+    self->freq_mhz = freq_mhz;
     self->initialized = false;
     self->card = NULL;
     self->block_count = 0;
@@ -92,9 +104,10 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
         mp_raise_msg_varg(&mp_type_OSError, MP_ERROR_TEXT("SD SPI init failed (ESP error: 0x%x)"), ret);
     }
 
-    // Create sdmmc_host_t structure for SPI mode
+    // Create sdmmc_host_t structure for SPI mode with custom frequency
     sdmmc_host_t host_config = SDSPI_HOST_DEFAULT();
     host_config.slot = bus->host;
+    host_config.max_freq_khz = self->freq_mhz * 1000;  // Convert MHz to kHz
 
     // Allocate card structure
     self->card = malloc(sizeof(sdmmc_card_t));
@@ -117,7 +130,25 @@ static mp_obj_t esp_sd_init(mp_obj_t self_in) {
     self->block_size = self->card->csd.sector_size;
     self->initialized = true;
 
-    ESP_LOGI(TAG, "SD card initialized: %lu blocks of %lu bytes", self->block_count, self->block_size);
+    // Configure GPIO pull-ups AFTER SD card initialization (ESP-IDF 5.4.2 fix)
+    ESP_LOGI(TAG, "Configuring GPIO pull-ups after SD card initialization");
+    
+    // Configure MISO pull-up
+    gpio_config_t miso_config = {
+        .pin_bit_mask = (1ULL << bus->miso_io_num),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    esp_err_t gpio_ret = gpio_config(&miso_config);
+    if (gpio_ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to configure MISO pull-up: %s", esp_err_to_name(gpio_ret));
+    } else {
+        ESP_LOGI(TAG, "MISO pull-up configured on pin %d", bus->miso_io_num);
+    }
+
+    ESP_LOGI(TAG, "SD card initialized: %lu blocks of %lu bytes at %dMHz", self->block_count, self->block_size, self->freq_mhz);
     
     return mp_const_none;
 }
