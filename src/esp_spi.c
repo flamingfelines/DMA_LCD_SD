@@ -4,6 +4,9 @@
 #include "esp_err.h"
 #include "py/obj.h"
 #include "driver/gpio.h"
+#include "esp_log.h"
+
+static const char* TAG = "esp_spi";
 
 static void enable_miso_pullup(int miso_gpio) {
     gpio_config_t io_conf = {
@@ -78,7 +81,7 @@ static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
         .sclk_io_num = self->sclk_io_num,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 240 * 240 * 2 + 8, // max size for your framebuffer, adjust as needed
+        .max_transfer_sz = 1024 * 1024, // ~1MB adjust as needed
     };
 
     esp_err_t ret = spi_bus_initialize(self->host, &buscfg, SPI_DMA_CH_AUTO);
