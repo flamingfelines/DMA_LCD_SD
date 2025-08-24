@@ -50,7 +50,6 @@ static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
         sclk_pin < -1 || sclk_pin > 48) {
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid GPIO pin number"));
     }
-    enable_miso_pullup(miso_pin);
         
     // Validate SPI host
     if (host < SPI1_HOST || host > SPI3_HOST) {
@@ -82,6 +81,7 @@ static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = 1024 * 1024, // ~1MB adjust as needed
+        .flags = SPICOMMON_BUSFLAG_GPIO_PINS  // Let SPI handle GPIO setup
     };
 
     esp_err_t ret = spi_bus_initialize(self->host, &buscfg, SPI_DMA_CH_AUTO);
