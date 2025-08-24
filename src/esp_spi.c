@@ -5,6 +5,18 @@
 #include "py/obj.h"
 #include "driver/gpio.h"
 
+static void enable_miso_pullup(int miso_gpio) {
+    gpio_config_t io_conf = {
+        .pin_bit_mask = 1ULL << miso_gpio,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    ESP_LOGI(TAG, "Enabled pull-up on GPIO%d (MISO)", miso_gpio);
+}
+
 static void esp_spi_bus_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
     mp_printf(print, "<esp_spi.SPIBus miso=%d mosi=%d sclk=%d initialized=%d>",
