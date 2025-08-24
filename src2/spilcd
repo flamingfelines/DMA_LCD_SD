@@ -1,209 +1,82 @@
 #include "py/obj.h"
+#include "py/runtime.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
-#include "esp_log.h"
-#include "string.h"
-#include "espio.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_lcd_panel_ops.h"
 
-static const char *TAG = "spilcd";
+#define PIN_NUM_MOSI  9
+#define PIN_NUM_MISO  8
+#define PIN_NUM_CLK   7
+#define PIN_NUM_CS_TFT 1
+#define PIN_NUM_DC    2
+#define PIN_NUM_RST  -1   // use -1 if tied to 3V3
+#define PIN_NUM_BL    3
 
-// ===== Config =====
-#define LCD_WIDTH   240
-#define LCD_HEIGHT  240
-#define LCD_BUF_SIZE (LCD_WIDTH * LCD_HEIGHT * 2) // RGB565
+static esp_lcd_panel_handle_t panel_handle;
 
-// ===== Globals =====
-static spi_device_handle_t lcd_handle;
-static uint16_t *lcd_buf = NULL;   // global framebuffer
-static int pin_dc, pin_rst, pin_bl;
+STATIC mp_obj_t tft_init(mp_obj_t width_in, mp_obj_t height_in) {
+    int width = mp_obj_get_int(width_in);
+    int height = mp_obj_get_int(height_in);
 
-// ===== 8x8 ASCII font =====
-extern const uint8_t font8x8_basic[128][8];
-
-// ===== Helper: send command =====
-static void lcd_cmd(uint8_t cmd) {
-    gpio_set_level(pin_dc, 0);
-    spi_transaction_t t = {
-        .length = 8,
-        .tx_buffer = &cmd,
+    spi_bus_config_t buscfg = {
+        .sclk_io_num = PIN_NUM_CLK,
+        .mosi_io_num = PIN_NUM_MOSI,
+        .miso_io_num = PIN_NUM_MISO,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = width * height * 2 + 8, // full frame
     };
-    spi_device_transmit(lcd_handle, &t);
-}
+    spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
 
-// ===== Helper: send data =====
-static void lcd_data(const uint8_t *data, int len) {
-    gpio_set_level(pin_dc, 1);
-    spi_transaction_t t = {
-        .length = len * 8,
-        .tx_buffer = data,
+    esp_lcd_panel_io_spi_config_t io_config = {
+        .dc_gpio_num = PIN_NUM_DC,
+        .cs_gpio_num = PIN_NUM_CS_TFT,
+        .pclk_hz = 40 * 1000 * 1000,  // 40 MHz if stable
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+        .spi_mode = 0,
+        .trans_queue_depth = 10,
     };
-    spi_device_transmit(lcd_handle, &t);
-}
+    esp_lcd_panel_io_handle_t io_handle;
+    esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &io_handle);
 
-// ===== LCD init sequence (ST7789 minimal) =====
-static void lcd_init_seq(void) {
-    // Reset
-    if (pin_rst >= 0) {
-        gpio_set_level(pin_rst, 0);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        gpio_set_level(pin_rst, 1);
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-
-    lcd_cmd(0x01); // SW reset
-    vTaskDelay(pdMS_TO_TICKS(150));
-
-    lcd_cmd(0x11); // Sleep out
-    vTaskDelay(pdMS_TO_TICKS(120));
-
-    uint8_t color_mode = 0x55; // 16-bit color
-    lcd_cmd(0x3A);
-    lcd_data(&color_mode, 1);
-
-    lcd_cmd(0x29); // Display ON
-    vTaskDelay(pdMS_TO_TICKS(20));
-}
-
-// ===== Python: spilcd.init(cs, dc, rst, bl) =====
-STATIC mp_obj_t spilcd_init(size_t n_args, const mp_obj_t *args) {
-    int pin_cs  = mp_obj_get_int(args[0]);
-    pin_dc      = mp_obj_get_int(args[1]);
-    pin_rst     = mp_obj_get_int(args[2]);
-    pin_bl      = mp_obj_get_int(args[3]);
-
-    // GPIO setup
-    gpio_set_direction(pin_dc, GPIO_MODE_OUTPUT);
-    if (pin_rst >= 0) gpio_set_direction(pin_rst, GPIO_MODE_OUTPUT);
-    if (pin_bl >= 0) {
-        gpio_set_direction(pin_bl, GPIO_MODE_OUTPUT);
-        gpio_set_level(pin_bl, 1); // backlight ON
-    }
-
-    // Attach device to existing SPI bus (from espio)
-    spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 40 * 1000 * 1000, // 40 MHz
-        .mode = 0,
-        .spics_io_num = pin_cs,
-        .queue_size = 1,
+    esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = PIN_NUM_RST,
+        .color_space = ESP_LCD_COLOR_SPACE_RGB,
+        .bits_per_pixel = 16,
     };
-
-    esp_err_t ret = spi_bus_add_device(SPI2_HOST, &devcfg, &lcd_handle);
-    if (ret != ESP_OK) {
-        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("spi_bus_add_device failed"));
-    }
-
-    // Init framebuffer
-    if (!lcd_buf) {
-        lcd_buf = heap_caps_malloc(LCD_BUF_SIZE, MALLOC_CAP_DMA);
-        if (!lcd_buf) {
-            mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("lcd_buf alloc failed"));
-        }
-    }
-    memset(lcd_buf, 0, LCD_BUF_SIZE);
-
-    // LCD init
-    lcd_init_seq();
-
-    ESP_LOGI(TAG, "LCD initialized (CS=%d, DC=%d, RST=%d, BL=%d)", pin_cs, pin_dc, pin_rst, pin_bl);
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(spilcd_init_obj, 4, 4, spilcd_init);
-
-// ===== Python: spilcd.fill(color) =====
-STATIC mp_obj_t spilcd_fill(mp_obj_t color_obj) {
-    uint16_t color = mp_obj_get_int(color_obj);
-    for (int i = 0; i < LCD_WIDTH * LCD_HEIGHT; i++) {
-        lcd_buf[i] = color;
-    }
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(spilcd_fill_obj, spilcd_fill);
-
-// ===== Python: spilcd.blit() =====
-STATIC mp_obj_t spilcd_blit(void) {
-    // Set column addr
-    uint8_t col_addr[] = {0x00, 0x00, 0x00, LCD_WIDTH-1};
-    lcd_cmd(0x2A);
-    lcd_data(col_addr, 4);
-
-    // Set row addr
-    uint8_t row_addr[] = {0x00, 0x00, 0x00, LCD_HEIGHT-1};
-    lcd_cmd(0x2B);
-    lcd_data(row_addr, 4);
-
-    lcd_cmd(0x2C);
-
-    gpio_set_level(pin_dc, 1);
-    spi_transaction_t t = {
-        .length = LCD_BUF_SIZE * 8,
-        .tx_buffer = lcd_buf,
-    };
-    spi_device_transmit(lcd_handle, &t);
+    esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
+    esp_lcd_panel_reset(panel_handle);
+    esp_lcd_panel_init(panel_handle);
+    esp_lcd_panel_disp_on_off(panel_handle, true);
 
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_0(spilcd_blit_obj, spilcd_blit);
+STATIC MP_DEFINE_CONST_FUN_OBJ_2(tft_init_obj, tft_init);
 
-// ===== Python: spilcd.text(str, x, y, color) =====
-STATIC mp_obj_t spilcd_text(size_t n_args, const mp_obj_t *args) {
-    const char *txt = mp_obj_str_get_str(args[0]);
-    int x = mp_obj_get_int(args[1]);
-    int y = mp_obj_get_int(args[2]);
-    uint16_t color = mp_obj_get_int(args[3]);
-
-    for (const char *p = txt; *p; p++, x += 8) {
-        if (*p < 0x20 || *p > 0x7F) continue;
-        const uint8_t *glyph = font8x8_basic[(int)*p];
-        for (int row = 0; row < 8; row++) {
-            uint8_t bits = glyph[row];
-            for (int col = 0; col < 8; col++) {
-                if (bits & (1 << col)) {
-                    int px = x + col;
-                    int py = y + row;
-                    if (px >= 0 && px < LCD_WIDTH && py >= 0 && py < LCD_HEIGHT) {
-                        lcd_buf[py * LCD_WIDTH + px] = color;
-                    }
-                }
-            }
-        }
-    }
+STATIC mp_obj_t tft_draw_bitmap(size_t n_args, const mp_obj_t *args) {
+    int x = mp_obj_get_int(args[0]);
+    int y = mp_obj_get_int(args[1]);
+    int w = mp_obj_get_int(args[2]);
+    int h = mp_obj_get_int(args[3]);
+    mp_buffer_info_t bufinfo;
+    mp_get_buffer_raise(args[4], &bufinfo, MP_BUFFER_READ);
+    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, bufinfo.buf);
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(spilcd_text_obj, 4, 4, spilcd_text);
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(tft_draw_bitmap_obj, 5, 5, tft_draw_bitmap);
 
-// ===== Colors (RGB565) =====
-#define C_RGB565(r,g,b) (((r&0x1F)<<11)|((g&0x3F)<<5)|((b&0x1F)))
-#define C_BLACK   0x0000
-#define C_WHITE   0xFFFF
-#define C_RED     0xF800
-#define C_GREEN   0x07E0
-#define C_BLUE    0x001F
-#define C_CYAN    0x07FF
-#define C_YELLOW  0xFFE0
-#define C_MAGENTA 0xF81F
-
-// ===== Module globals =====
-STATIC const mp_rom_map_elem_t spilcd_module_globals_table[] = {
-    { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&spilcd_init_obj) },
-    { MP_ROM_QSTR(MP_QSTR_fill), MP_ROM_PTR(&spilcd_fill_obj) },
-    { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&spilcd_blit_obj) },
-    { MP_ROM_QSTR(MP_QSTR_text), MP_ROM_PTR(&spilcd_text_obj) },
-
-    // Colors
-    { MP_ROM_QSTR(MP_QSTR_BLACK), MP_ROM_INT(C_BLACK) },
-    { MP_ROM_QSTR(MP_QSTR_WHITE), MP_ROM_INT(C_WHITE) },
-    { MP_ROM_QSTR(MP_QSTR_RED), MP_ROM_INT(C_RED) },
-    { MP_ROM_QSTR(MP_QSTR_GREEN), MP_ROM_INT(C_GREEN) },
-    { MP_ROM_QSTR(MP_QSTR_BLUE), MP_ROM_INT(C_BLUE) },
-    { MP_ROM_QSTR(MP_QSTR_CYAN), MP_ROM_INT(C_CYAN) },
-    { MP_ROM_QSTR(MP_QSTR_YELLOW), MP_ROM_INT(C_YELLOW) },
-    { MP_ROM_QSTR(MP_QSTR_MAGENTA), MP_ROM_INT(C_MAGENTA) },
+STATIC const mp_rom_map_elem_t tft_module_globals_table[] = {
+    { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&tft_init_obj) },
+    { MP_ROM_QSTR(MP_QSTR_draw_bitmap), MP_ROM_PTR(&tft_draw_bitmap_obj) },
 };
-STATIC MP_DEFINE_CONST_DICT(spilcd_module_globals, spilcd_module_globals_table);
+STATIC MP_DEFINE_CONST_DICT(tft_module_globals, tft_module_globals_table);
 
-const mp_obj_module_t mp_module_spilcd = {
+const mp_obj_module_t mp_module_tft = {
     .base = { &mp_type_module },
-    .globals = (mp_obj_dict_t *)&spilcd_module_globals,
+    .globals = (mp_obj_dict_t *)&tft_module_globals,
 };
 
-MP_REGISTER_MODULE(MP_QSTR_spilcd, mp_module_spilcd);
+MP_REGISTER_MODULE(MP_QSTR_tft, mp_module_tft);
