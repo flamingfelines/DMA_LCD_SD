@@ -47,7 +47,8 @@ static mp_obj_t esp_spi_bus_make_new(const mp_obj_type_t *type,
         sclk_pin < -1 || sclk_pin > 48) {
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid GPIO pin number"));
     }
-    
+    enable_miso_pullup(miso_pin);
+        
     // Validate SPI host
     if (host < SPI1_HOST || host > SPI3_HOST) {
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid SPI host"));
