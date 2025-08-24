@@ -1,0 +1,66 @@
+#include "py/obj.h"
+#include "py/runtime.h"
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_vendor.h"
+#include "esp_lcd_panel_ops.h"
+
+#define COLOR_BLACK   0x0000
+#define COLOR_WHITE   0xFFFF
+#define COLOR_RED     0xF800
+#define COLOR_GREEN   0x07E0
+#define COLOR_BLUE    0x001F
+#define COLOR_CYAN    0x07FF
+#define COLOR_YELLOW  0xFFE0
+#define COLOR_MAGENTA 0xF81F
+
+#define PIN_NUM_MOSI  9
+#define PIN_NUM_MISO  8
+#define PIN_NUM_CLK   7
+#define PIN_NUM_CS_TFT 1
+#define PIN_NUM_DC    2
+#define PIN_NUM_RST  -1   // use -1 if tied to 3V3
+#define PIN_NUM_BL    3
+
+static esp_lcd_panel_handle_t panel_handle;
+
+STATIC mp_obj_t espio_init_bus(void) {
+    spi_bus_config_t buscfg = {
+        .sclk_io_num = 7,
+        .mosi_io_num = 9,
+        .miso_io_num = 8,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 240*240*2 + 8,
+    };
+    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(espio_init_bus_obj, espio_init_bus);
+
+
+STATIC mp_obj_t tft_draw_bitmap(size_t n_args, const mp_obj_t *args) {
+    int x = mp_obj_get_int(args[0]);
+    int y = mp_obj_get_int(args[1]);
+    int w = mp_obj_get_int(args[2]);
+    int h = mp_obj_get_int(args[3]);
+    mp_buffer_info_t bufinfo;
+    mp_get_buffer_raise(args[4], &bufinfo, MP_BUFFER_READ);
+    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, bufinfo.buf);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(tft_draw_bitmap_obj, 5, 5, tft_draw_bitmap);
+
+STATIC const mp_rom_map_elem_t tft_module_globals_table[] = {
+    { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&tft_init_obj) },
+    { MP_ROM_QSTR(MP_QSTR_draw_bitmap), MP_ROM_PTR(&tft_draw_bitmap_obj) },
+};
+STATIC MP_DEFINE_CONST_DICT(tft_module_globals, tft_module_globals_table);
+
+const mp_obj_module_t mp_module_tft = {
+    .base = { &mp_type_module },
+    .globals = (mp_obj_dict_t *)&tft_module_globals,
+};
+
+MP_REGISTER_MODULE(MP_QSTR_tft, mp_module_tft);
