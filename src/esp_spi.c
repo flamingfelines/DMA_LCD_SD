@@ -69,7 +69,7 @@ static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = 1024 * 1024, // ~1MB adjust as needed
-        .flags = SPICOMMON_BUSFLAG_GPIO_PINS  // Let SPI handle GPIO setup
+        .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS | SPICOMMON_BUSFLAG_SLP_ALLOW_PD  // Let SPI handle GPIO setup
     };
 
     esp_err_t ret = spi_bus_initialize(self->host, &buscfg, SPI_DMA_CH_AUTO);
