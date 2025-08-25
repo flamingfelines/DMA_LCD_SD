@@ -2838,7 +2838,6 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
         {MP_QSTR_custom_init, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL}},
         {MP_QSTR_color_space, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = ESP_LCD_COLOR_SPACE_RGB}},
         {MP_QSTR_inversion_mode, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = true}},
-        {MP_QSTR_idle_mode, MP_ARG_BOOL | MP_ARG_KW_ONLY, {.u_bool = true}},
         {MP_QSTR_dma_rows, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 16}},
         {MP_QSTR_options, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 0}},
     };
@@ -2846,13 +2845,12 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-
     // create new object
     s3lcd_obj_t *self = m_new_obj(s3lcd_obj_t);
     self->base.type = &s3lcd_type;
     self->bus = args[ARG_bus].u_obj;
     
-    //Validate bus type - should be s3lcd_spi_bus, not esp_spi_bus
+    // Validate bus type - should be s3lcd_spi_bus, not esp_spi_bus
     if (!mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         mp_raise_TypeError(MP_ERROR_TEXT("bus must be an s3lcd_spi_bus object"));
     }
@@ -2862,15 +2860,29 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->width = args[ARG_width].u_int;
     self->height = args[ARG_height].u_int;
 
-    uint16_t longest_axis = ((self->width > self->height) ? self->width : self->height);
+    // Calculate DMA buffer size - needs to handle the widest possible row in any rotation
+    uint16_t max_width = (self->width > self->height) ? self->width : self->height;
     self->dma_rows = args[ARG_dma_rows].u_int;
-    self->dma_buffer_size = self->dma_rows * longest_axis * 2;
+    self->dma_buffer_size = self->dma_rows * max_width * sizeof(uint16_t);
+    
+    // Allocate DMA buffer
     self->dma_buffer = heap_caps_malloc(self->dma_buffer_size, MALLOC_CAP_DMA);
     if (self->dma_buffer == NULL) {
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
     }
     memset(self->dma_buffer, 0, self->dma_buffer_size);
 
+    // Allocate frame buffer
+    self->frame_buffer_size = self->width * self->height * sizeof(uint16_t);
+    self->frame_buffer = m_new(uint16_t, self->width * self->height);
+    if (self->frame_buffer == NULL) {
+        // Clean up DMA buffer on failure
+        heap_caps_free(self->dma_buffer);
+        self->dma_buffer = NULL;
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
+    }
+
+    // Set up rotations
     self->rotations = set_rotations(self->width, self->height);
     self->rotations_len = 4;
 
@@ -2879,13 +2891,21 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
         mp_obj_t *rotations_array = MP_OBJ_NULL;
         mp_obj_get_array(args[ARG_rotations].u_obj, &len, &rotations_array);
         self->rotations_len = len;
+        
+        // Free the default rotations and allocate custom ones
+        m_del(s3lcd_rotation_t, self->rotations, 4);
         self->rotations = m_new(s3lcd_rotation_t, self->rotations_len);
+        
         for (int i = 0; i < self->rotations_len; i++) {
             mp_obj_t *rotation_tuple = NULL;
             size_t rotation_tuple_len = 0;
 
             mp_obj_tuple_get(rotations_array[i], &rotation_tuple_len, &rotation_tuple);
             if (rotation_tuple_len != 7) {
+                // Clean up on error
+                heap_caps_free(self->dma_buffer);
+                m_free(self->frame_buffer);
+                m_del(s3lcd_rotation_t, self->rotations, self->rotations_len);
                 mp_raise_ValueError(MP_ERROR_TEXT("rotations tuple must have 7 elements"));
             }
             self->rotations[i].width = mp_obj_get_int(rotation_tuple[0]);
@@ -2903,8 +2923,12 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->color_space = args[ARG_color_space].u_int;
     self->inversion_mode = args[ARG_inversion_mode].u_bool;
     self->options = args[ARG_options].u_int & 0xff;
-    self->frame_buffer_size = self->width * self->height * 2;
-    self->frame_buffer = NULL;
+    
+    // Initialize panel-related fields to NULL (will be set during init())
+    self->panel_handle = NULL;
+    self->io_handle = NULL;
+    self->swap_color_bytes = false;  // Will be set from bus config during init
+    
     return MP_OBJ_FROM_PTR(self);
 }
 
