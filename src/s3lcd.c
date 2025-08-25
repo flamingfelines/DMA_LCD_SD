@@ -1467,16 +1467,8 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     
     // Initialize the panel
     esp_lcd_panel_reset(panel_handle);
-    if (self->custom_init == MP_OBJ_NULL) {
-        esp_lcd_panel_init(panel_handle);
-        
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-        esp_lcd_panel_disp_on_off(panel_handle, true);
-#endif
-    } else {
-        custom_init(self);
-    }
-    
+    esp_lcd_panel_init(panel_handle);
+    esp_lcd_panel_disp_on_off(panel_handle, true);
     esp_lcd_panel_invert_color(panel_handle, self->inversion_mode);
     set_rotation(self);
     
@@ -1505,7 +1497,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     dma_buffer_size = (dma_buffer_size + 3) & ~3; // 4-byte align
     self->dma_buffer_size = dma_buffer_size;
     
-    self->dma_buffer = heap_caps_aligned_alloc(4, dma_buffer_size, MALLOC_CAP_DMA);
+    self->dma_buffer = heap_caps_malloc(dma_buffer_size, MALLOC_CAP_DMA);
     if (self->dma_buffer == NULL) {
         // Clean up frame buffer on DMA allocation failure
         m_free(self->frame_buffer);
