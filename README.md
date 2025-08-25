@@ -1,6 +1,6 @@
 # ESP-IDF General DMA-Enabled SPI MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays used in tandem with SD Cards. 
 
-****Warning:**** Does not work with i80 lcd screens, only SPI. Only tested on XIAO ESP32-S3 and ST7789 display. 
+****Warning:**** Not tested or coded for working with i80 lcd screens, only SPI. Only tested on XIAO ESP32-S3 and ST7789 display. 
 
 ## Overview
 
@@ -21,17 +21,18 @@ Russ Hughes modified the original driver to add the following features:
 - Drawing and rotating Polygons and filled Polygons.
 - Several example programs. The example programs require a tft_config.py module to be present. Some examples require a tft_buttons.py module as well. You may need to modify the tft_buttons.py module to match the pins your device uses.
 
-I modified the original s3lcd driver to accept a general SPI object instead of creating it's own SPI object so that it can be more easily shared with other SPI devices on a single bus. 
-I also added esp_spi, a C-based driver that creates a general-use SPI bus using ESP_IDF
-and esp_sd, a a C-based driver that initiates an SD card using the generap SPI bus above and wraps it to be used by vfs functions. 
+How I modified the original s3lcd driver:
+- Creates a master SPI object instead of the lcd creating it's own exclusive-use one
+- Updated SPI creation to initialize GPIO and BUS_MASTER flags for the ESP v5.4.2 API
+- Created esp_sd, a C-based driver that initiates an SD card using the generap SPI bus above and wraps it to be used by micropython's existing vfs functions. 
 - debug test w/ tft_config and sd_card_config is provided for:
   - XIAO ESP32-S3 W/ ST7789 DISPLAY
 
 ## Pre-compiled firmware
 
-The firmware directory contains pre-compiled MicroPython v1.22.2 firmware compiled using ESP IDF v5.4.2. In addition, the firmware includes the C driver and several frozen Python font files. See the README.md file in the fonts folder for more information about the font files.
+The firmware directory contains pre-compiled MicroPython v1.26 firmware compiled using ESP IDF v5.4.2. In addition, the firmware includes the C driver and several frozen Python font files. See the README.md file in the fonts folder for more information about the font files.
 
-(To compile your own firmware, you will likely have to increase partition size slightly, I increased mine to 2.5 and that was enough.)
+(To compile your own firmware, you will likely have to increase partition size slightly, I increased mine to 2.5MB and that was enough.)
 
 ## Driver API
 
@@ -39,9 +40,10 @@ Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Py
 
 ## I80_BUS Methods
   *NON-FUNCTIONING*
+  
 ## ESP_SPI Methods
 Create and initialize the SPI bus
-    - esp_spi.SPIBus(MISO_PIN, MOSI_PIN, SCLK_PIN)
+    - esp_spi.SPIBus(MISO_PIN, MOSI_PIN, SCLK_PIN, {SPI_HOST}) (Defaults to SPI2_HOST)
     *only takes positional arguments
     
       - init: initiliazes SPI Bus. 
@@ -58,7 +60,7 @@ Create and initialize SD card #MUST BE DONE AFTER DISPLAY FOR STABILITY
 
     Once initialized, you can pass the sd_card object to vfs for standard functions like: vfs.mount(sd_card, '/sd')
 
-## SPI_BUS Methods
+## LCD SPI_BUS Methods
 
 - `s3lcd.SPI_BUS(spi_bus, spi_host, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
 
@@ -84,10 +86,10 @@ Create and initialize SD card #MUST BE DONE AFTER DISPLAY FOR STABILITY
 
 ## ESPLCD Methods
 
-- `s3lcd.ESPLCD(bus, width, height, {reset, rotations, rotation, inversion, dma_rows, options})`
+- `s3lcd.ESPLCD(lcd_bus, width, height, {reset, rotations, rotation, inversion, dma_rows, options})`
 
     ### Required positional arguments:
-    - `bus` I80_BUS or SPI_BUS object
+    - `bus` LCD Bus object created by s3lcd.SPI_BUS()
     - `width` display width
     - `height` display height
 
@@ -137,7 +139,7 @@ Create and initialize SD card #MUST BE DONE AFTER DISPLAY FOR STABILITY
 
 - `deinit()`
 
-    Frees the buffer memory and deinitializes the I80_BUF or SPI_BUF object. Call this method before reinitializing the display without performing a hard reset.
+    Frees the buffer memory and deinitializes the LCD SPI_BUF object. Call this method before reinitializing the display without performing a hard reset.
 
 - `idle_mode(value)`
 
