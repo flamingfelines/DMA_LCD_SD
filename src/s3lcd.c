@@ -2628,7 +2628,7 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
         lcd_panel_active = false;
         return;
     }
-    
+    int timeout = 1000;
     // Tight polling for first few iterations, then delay
     for (int i = 0; i < 100; i++) {
         if (!lcd_panel_active) break;
