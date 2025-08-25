@@ -1428,8 +1428,8 @@ static void custom_init(s3lcd_obj_t *self) {
 
 
 ///
-/// .init() - Simplified version using proper LCD API
-/// Initialize the display using the IO handle created by s3lcd_spi_bus
+/// .init() - Initialize the display using the IO handle created by s3lcd_spi_bus
+/// Allocates frame buffer and DMA buffer, initializes the LCD panel
 ///
 static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -1467,13 +1467,11 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     
     // Initialize the panel
     esp_lcd_panel_reset(panel_handle);
-
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
         
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
         esp_lcd_panel_disp_on_off(panel_handle, true);
-        
 #endif
     } else {
         custom_init(self);
@@ -1485,30 +1483,36 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     // Allocate frame buffer
     if (self->frame_buffer != NULL) {
         m_free(self->frame_buffer);
+        self->frame_buffer = NULL;
     }
-
     self->frame_buffer = m_malloc(self->frame_buffer_size);
     if (self->frame_buffer == NULL) {
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
     }
+    memset(self->frame_buffer, 0, self->frame_buffer_size);
     
     // Allocate DMA buffer with proper alignment and size
     if (self->dma_buffer != NULL) {
         heap_caps_free(self->dma_buffer);
+        self->dma_buffer = NULL;
     }
     
     if (self->dma_rows == 0) {
-        self->dma_rows = 60; // Larger chunks = fewer transactions
+        self->dma_rows = 60; // Larger chunks = fewer transactions for better speed
     }
     
     size_t dma_buffer_size = self->width * self->dma_rows * sizeof(uint16_t);
     dma_buffer_size = (dma_buffer_size + 3) & ~3; // 4-byte align
+    self->dma_buffer_size = dma_buffer_size;
     
     self->dma_buffer = heap_caps_aligned_alloc(4, dma_buffer_size, MALLOC_CAP_DMA);
     if (self->dma_buffer == NULL) {
+        // Clean up frame buffer on DMA allocation failure
+        m_free(self->frame_buffer);
+        self->frame_buffer = NULL;
         mp_raise_msg(&mp_type_MemoryError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
     }
-    memset(self->frame_buffer, 0, self->frame_buffer_size);
+    
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(s3lcd_init_obj, s3lcd_init);
@@ -2810,6 +2814,20 @@ s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {
 /// -- options: options
 ///
 
+///
+/// .__init__(bus, width, height, reset, rotations, rotation, inversion, options)
+/// required parameters:
+/// -- bus: bus
+/// -- width: width of the display
+/// -- height: height of the display
+/// optional keyword parameters:
+/// -- reset: reset pin
+/// -- rotations: number of rotations
+/// -- rotation: rotation
+/// -- inversion: inversion
+/// -- options: options
+///
+
 mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     size_t n_args,
     size_t n_kw,
@@ -2860,27 +2878,14 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->width = args[ARG_width].u_int;
     self->height = args[ARG_height].u_int;
 
-    // Calculate DMA buffer size - needs to handle the widest possible row in any rotation
-    uint16_t max_width = (self->width > self->height) ? self->width : self->height;
+    // Initialize DMA buffer settings - will be allocated in init()
     self->dma_rows = args[ARG_dma_rows].u_int;
-    self->dma_buffer_size = self->dma_rows * max_width * sizeof(uint16_t);
-    
-    // Allocate DMA buffer
-    self->dma_buffer = heap_caps_malloc(self->dma_buffer_size, MALLOC_CAP_DMA);
-    if (self->dma_buffer == NULL) {
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to allocate DMA buffer"));
-    }
-    memset(self->dma_buffer, 0, self->dma_buffer_size);
+    self->dma_buffer_size = 0;  // Will be calculated in init()
+    self->dma_buffer = NULL;
 
-    // Allocate frame buffer
+    // Initialize buffer pointers - will be allocated in init()
     self->frame_buffer_size = self->width * self->height * sizeof(uint16_t);
-    self->frame_buffer = m_new(uint16_t, self->width * self->height);
-    if (self->frame_buffer == NULL) {
-        // Clean up DMA buffer on failure
-        heap_caps_free(self->dma_buffer);
-        self->dma_buffer = NULL;
-        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("Failed to allocate frame buffer"));
-    }
+    self->frame_buffer = NULL;
 
     // Set up rotations
     self->rotations = set_rotations(self->width, self->height);
@@ -2902,9 +2907,7 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
 
             mp_obj_tuple_get(rotations_array[i], &rotation_tuple_len, &rotation_tuple);
             if (rotation_tuple_len != 7) {
-                // Clean up on error
-                heap_caps_free(self->dma_buffer);
-                m_free(self->frame_buffer);
+                // Clean up on error - no buffers allocated yet
                 m_del(s3lcd_rotation_t, self->rotations, self->rotations_len);
                 mp_raise_ValueError(MP_ERROR_TEXT("rotations tuple must have 7 elements"));
             }
