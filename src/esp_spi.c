@@ -82,6 +82,24 @@ static mp_obj_t esp_spi_bus_init(mp_obj_t self_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(esp_spi_bus_init_obj, esp_spi_bus_init);
 
+static mp_obj_t esp_spi_bus_deinit(mp_obj_t self_in) {
+    esp_spi_bus_obj_t *self = MP_OBJ_TO_PTR(self_in);
+
+    if (!self->initialized) {
+        return mp_const_none; // Already deinitialized
+    }
+
+    esp_err_t ret = spi_bus_free(self->host);
+    if (ret != ESP_OK) {
+        // Log warning but don't raise exception - we want to mark as deinitialized anyway
+        ESP_LOGW(TAG, "spi_bus_free failed with error 0x%x", ret);
+    }
+
+    self->initialized = false;
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(esp_spi_bus_deinit_obj, esp_spi_bus_deinit);
+
 // Device object print
 static void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     esp_spi_device_obj_t *self = MP_OBJ_TO_PTR(self_in);
@@ -90,6 +108,7 @@ static void esp_spi_device_print(const mp_print_t *print, mp_obj_t self_in, mp_p
 
 static const mp_rom_map_elem_t esp_spi_bus_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&esp_spi_bus_init_obj) },
+    { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&esp_spi_bus_deinit_obj) },
 };
 static MP_DEFINE_CONST_DICT(esp_spi_bus_locals_dict, esp_spi_bus_locals_dict_table);
 
