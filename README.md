@@ -38,6 +38,11 @@ The firmware directory contains pre-compiled MicroPython v1.26 firmware compiled
 
 Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Python dictionary.
 
+## PIXEL-BASED IMAGE SCALING
+import pixelscale
+
+scaled = pixelscale.scale2d(image_data, length, width, scale)
+
 ## I80_BUS Methods
   *NON-FUNCTIONING*
   
