@@ -8,6 +8,8 @@ target_sources(usermod_dma_lcd_sd INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/esp_spi.c
     ${CMAKE_CURRENT_LIST_DIR}/esp_sd.c
     ${CMAKE_CURRENT_LIST_DIR}/mpfile.c
+    ${CMAKE_CURRENT_LIST_DIR}/animation.c
+    ${CMAKE_CURRENT_LIST_DIR}/pixelscale.c
     ${CMAKE_CURRENT_LIST_DIR}/jpg/tjpgd565.c
     ${CMAKE_CURRENT_LIST_DIR}/png/pngle.c
     ${CMAKE_CURRENT_LIST_DIR}/png/miniz.c
