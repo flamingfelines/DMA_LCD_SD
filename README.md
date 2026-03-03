@@ -356,6 +356,230 @@ The `vscsad` method sets the (VSSA) Vertical Scroll Start Address. The VSSA sets
   Convert a `bitarray` to the rgb565 color `buffer` suitable for blitting. Bit
   1 in `bitarray` is a pixel with `color` and 0 - with `bg_color`.
 
+# `animation` C Module — Python API Reference
+
+---
+
+## Setup
+
+### `animation.set_display_size(w, h)`
+Set the display dimensions. Call once at startup before any other calls.
+- `w` — display width in pixels
+- `h` — display height in pixels
+
+```python
+animation.set_display_size(240, 240)
+```
+
+---
+
+## Scene Management
+
+### `animation.clear_slots()`
+Disable and clear all slots. Call this on every scene transition before
+setting up the new scene's slots.
+
+```python
+animation.clear_slots()
+```
+
+---
+
+## Slot Management
+
+Slots are drawn in index order — slot 0 is the bottommost layer, higher
+indices draw on top. Up to 16 slots (indices 0–15).
+
+---
+
+### `animation.set_slot(index, buf, x, y, w, h)`
+Register a sprite buffer in a slot. Enables the slot automatically.
+Use this for initial setup or when the sprite's dimensions change.
+- `index` — slot number (0–15)
+- `buf`   — bytearray of RGB565 pixel data
+- `x`     — x position on screen
+- `y`     — y position on screen
+- `w`     — sprite width in pixels
+- `h`     — sprite height in pixels
+
+```python
+animation.set_slot(0, background_data, 0, 0, 240, 240)
+animation.set_slot(1, chao_frame, chao_x, chao_y, 66, 66)
+animation.set_slot(2, ball_frame, ball_x, ball_y, 66, 66)
+```
+
+---
+
+### `animation.update_slot(index, buf, x, y)`
+Update the frame buffer and position of an existing slot.
+Width and height stay unchanged — use `set_slot` if those need to change.
+Best for sprites that change both frame and position every tick (e.g. the chao).
+- `index` — slot number (0–15)
+- `buf`   — new bytearray of RGB565 pixel data
+- `x`     — new x position
+- `y`     — new y position
+
+```python
+animation.update_slot(1, chao_frame, chao_x, chao_y)
+```
+
+---
+
+### `animation.update_slot_buf(index, buf)`
+Update only the frame buffer of a slot. Position stays unchanged.
+Best for stationary sprites that cycle through animation frames (e.g. an NPC
+that doesn't move but animates in place).
+- `index` — slot number (0–15)
+- `buf`   — new bytearray of RGB565 pixel data
+
+```python
+animation.update_slot_buf(3, menu_frames[current_menu_frame])
+```
+
+---
+
+### `animation.update_slot_pos(index, x, y)`
+Update only the position of a slot. Frame buffer stays unchanged.
+Best for sprites that slide across the screen without changing frame.
+- `index` — slot number (0–15)
+- `x`     — new x position
+- `y`     — new y position
+
+```python
+animation.update_slot_pos(4, enemy_x, enemy_y)
+```
+
+---
+
+### `animation.enable_slot(index, enabled)`
+Show or hide a slot without clearing its data.
+Useful for conditional elements like fruit, items, or enemies that appear
+and disappear without needing to re-register the slot each time.
+- `index`   — slot number (0–15)
+- `enabled` — `True` to show, `False` to hide
+
+```python
+animation.enable_slot(5, fruit_present)
+```
+
+---
+
+### `animation.set_slot_clip(index, clip_bottom)`
+Enable vertical clipping on a slot. Pixels at or below `clip_bottom` (in
+screen coordinates) will not be drawn. Pass `0` to disable clipping.
+Useful for sprites that emerge from or sink into a surface (e.g. a chomper
+rising out of water).
+- `index`        — slot number (0–15)
+- `clip_bottom`  — y coordinate below which pixels are hidden (0 = disabled)
+
+```python
+animation.set_slot_clip(6, water_surface_y)  # hide chomper below waterline
+animation.set_slot_clip(6, 0)                # remove clipping
+```
+
+---
+
+## Drawing
+
+### `animation.fill_background(display_buf, bg_data)`
+Fast memcpy of `bg_data` into `display_buf`. Call this every frame before
+`draw_all` to reset the buffer. Faster than putting the background in slot 0
+because it skips the per-pixel transparency check.
+- `display_buf` — writable bytearray that will be sent to the display
+- `bg_data`     — bytearray of background RGB565 data (must be >= display_buf size)
+
+```python
+animation.fill_background(display_buf, background_data)
+```
+
+---
+
+### `animation.draw_all(display_buf)`
+Composite all enabled slots onto `display_buf` in slot order (0 = bottom).
+Pixels matching the magic transparency color `RGB(231, 154, 99)` are skipped.
+Call after `fill_background`, then send `display_buf` to the display.
+- `display_buf` — writable bytearray to composite into
+
+```python
+animation.draw_all(display_buf)
+tft.blit_buffer(memoryview(display_buf), 0, 0, 240, 240)
+```
+
+---
+
+## Buffer Utilities
+
+### `animation.flip_buf_horizontal(src, dst, w, h)`
+Flip a sprite buffer horizontally (mirror left/right) into `dst`.
+Use this at load time to pre-compute a flipped version of a frame so you
+can swap between normal and flipped with just `update_slot_buf`.
+- `src` — source bytearray (RGB565)
+- `dst` — destination bytearray (must be same size as src)
+- `w`   — sprite width in pixels
+- `h`   — sprite height in pixels
+
+```python
+chao_flipped = bytearray(len(chao_frame))
+animation.flip_buf_horizontal(chao_frame, chao_flipped, 66, 66)
+```
+
+---
+
+### `animation.flip_buf_vertical(src, dst, w, h)`
+Flip a sprite buffer vertically (mirror top/bottom) into `dst`.
+Use this at load time to pre-compute upside-down frames (e.g. a chomper
+that flips when falling).
+- `src` — source bytearray (RGB565)
+- `dst` — destination bytearray (must be same size as src)
+- `w`   — sprite width in pixels
+- `h`   — sprite height in pixels
+
+```python
+chomper_flipped = bytearray(len(chomper_frame))
+animation.flip_buf_vertical(chomper_frame, chomper_flipped, 96, 64)
+```
+
+---
+
+## Typical Frame Loop Pattern
+
+```python
+# ── init (once) ──────────────────────────────────────────────
+animation.set_display_size(240, 240)
+
+# ── scene setup (once per scene transition) ──────────────────
+animation.clear_slots()
+animation.set_slot(1, chao_frame,  chao_x,  chao_y,  66, 66)
+animation.set_slot(2, ball_frame,  ball_x,  ball_y,  66, 66)
+animation.set_slot(3, menu_frame,  menu_x,  0,       24, 24)
+animation.set_slot(4, fruit_frame, fruit_x, fruit_y, 16, 16)
+animation.enable_slot(4, False)  # hidden until fruit spawns
+
+# ── each frame ───────────────────────────────────────────────
+animation.update_slot(1, chao_frame, chao_x, chao_y)   # frame + pos changed
+animation.update_slot(2, ball_frame, ball_x, ball_y)   # frame + pos changed
+animation.update_slot_buf(3, menu_frames[menu_idx])    # pos fixed, frame changed
+animation.enable_slot(4, fruit_present)                # show/hide as needed
+
+animation.fill_background(display_buf, background_data)
+animation.draw_all(display_buf)
+tft.blit_buffer(memoryview(display_buf), 0, 0, 240, 240)
+```
+
+---
+
+## Notes
+
+- The magic transparency color is hardcoded as `RGB(231, 154, 99)` — hex `0xE49A63`,
+  packed RGB565 value `58572`. Pixels of this color in any sprite are treated as
+  transparent and not written to `display_buf`.
+- Slot 0 is reserved by convention for the background, but there is no enforcement.
+  Using `fill_background` for the background and starting sprites at slot 1 is
+  recommended since it avoids a per-pixel transparency check on the background.
+- Slots retain their data after `enable_slot(index, False)` — re-enabling them
+  restores the last registered buffer and position.
+- `clear_slots()` nulls out all buffers and disables all slots. Always call it
+  before setting up a new scene to avoid stale slots bleeding through.
 
 # Building the firmware
 
