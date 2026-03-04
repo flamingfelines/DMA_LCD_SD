@@ -35,7 +35,7 @@
 #include "py/obj.h"
 #include "py/runtime.h"
 #include "py/mpconfig.h"
-#include "py/unichar.h"
+#include "py/unicode.h"
 #include "esp_lcd.h"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
