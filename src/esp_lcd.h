@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023 Russ Hughes
+ * Copyright (c) 2026 FlamingFelines
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,6 +36,8 @@ bool lcd_panel_done(esp_lcd_panel_io_handle_t panel_io,
                     esp_lcd_panel_io_event_data_t *edata,
                     void *user_ctx);
 
+// ── SPI Bus object ────────────────────────────────────────────────────────────
+
 typedef struct _esp_lcd_spi_bus_obj_t {
     mp_obj_base_t base;
     char *name;
@@ -61,5 +64,26 @@ typedef struct _esp_lcd_spi_bus_obj_t {
 } esp_lcd_spi_bus_obj_t;
 
 extern const mp_obj_type_t esp_lcd_spi_bus_type;
+
+// ── Display object ────────────────────────────────────────────────────────────
+
+typedef struct _anim_display_obj_t {
+    mp_obj_base_t              base;
+    mp_obj_t                   bus;
+    esp_lcd_panel_io_handle_t  io_handle;
+    esp_lcd_panel_handle_t     panel_handle;
+    uint16_t                   width;
+    uint16_t                   height;
+    uint8_t                    rotation;
+    bool                       inversion_mode;
+    bool                       swap_color_bytes;
+    gpio_num_t                 rst;
+    uint8_t                    color_space;
+    uint16_t                   dma_rows;
+    uint16_t                  *dma_buffer;
+    size_t                     dma_buffer_size;
+} anim_display_obj_t;
+
+extern const mp_obj_type_t anim_display_type;
 
 #endif /* __ESP_LCD_H__ */
