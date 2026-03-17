@@ -20,7 +20,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-
 /*
  * animation.c — Sprite compositing and drawing for MicroPython on ESP32-S3.
  *
@@ -33,14 +32,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "py/obj.h"
-#include "py/objstr.h"
-#include "py/objmodule.h"
 #include "py/runtime.h"
 #include "py/mpconfig.h"
-#include "py/unicode.h"
+#include "py/unichar.h"
 #include "esp_lcd.h"
-#include "py/builtin.h"
-#include "py/mphal.h"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -55,6 +50,7 @@ typedef struct {
     uint8_t  *buf;
     int16_t   x, y, w, h;
     bool      enabled;
+    uint8_t   opacity;         // 0 = invisible, 255 = fully opaque (default)
     // Vertical clip
     int16_t   clip_y;
     bool      clip_y_enabled;
@@ -86,6 +82,7 @@ static mp_obj_t animation_clear_slots(void) {
     for (int i = 0; i < MAX_SLOTS; i++) {
         slots[i].enabled        = false;
         slots[i].buf            = NULL;
+        slots[i].opacity        = 255;
         slots[i].clip_y_enabled = false;
         slots[i].clip_x_enabled = false;
     }
@@ -107,6 +104,7 @@ static mp_obj_t animation_set_slot(size_t n_args, const mp_obj_t *args) {
     slots[idx].w              = (int16_t)mp_obj_get_int(args[4]);
     slots[idx].h              = (int16_t)mp_obj_get_int(args[5]);
     slots[idx].enabled        = true;
+    slots[idx].opacity        = 255;
     slots[idx].clip_y_enabled = false;
     slots[idx].clip_x_enabled = false;
     return mp_const_none;
@@ -164,6 +162,21 @@ static mp_obj_t animation_enable_slot(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_enable_slot_obj, 2, 2, animation_enable_slot);
 
+// ─── set_slot_opacity ────────────────────────────────────────────────────────
+// set_slot_opacity(index, opacity)  opacity: 0 = invisible, 255 = fully opaque
+
+static mp_obj_t animation_set_slot_opacity(mp_obj_t idx_in, mp_obj_t opacity_in) {
+    int idx = mp_obj_get_int(idx_in);
+    if (idx < 0 || idx >= MAX_SLOTS)
+        mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
+    int op = mp_obj_get_int(opacity_in);
+    if (op < 0)   op = 0;
+    if (op > 255) op = 255;
+    slots[idx].opacity = (uint8_t)op;
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_2(animation_set_slot_opacity_obj, animation_set_slot_opacity);
+
 // ─── set_slot_clip ───────────────────────────────────────────────────────────
 // set_slot_clip(index, clip_x, clip_x_dir, clip_y, clip_y_dir)
 // clip_x / clip_y: pixel coordinate cutoff; 0 = disabled
@@ -195,11 +208,12 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_clip_obj, 5, 5, an
 // ─── Internal blit ───────────────────────────────────────────────────────────
 
 static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
-    uint8_t *src = slot->buf;
-    int16_t  sw  = slot->w;
-    int16_t  sh  = slot->h;
-    int16_t  ox  = slot->x;
-    int16_t  oy  = slot->y;
+    uint8_t *src     = slot->buf;
+    int16_t  sw      = slot->w;
+    int16_t  sh      = slot->h;
+    int16_t  ox      = slot->x;
+    int16_t  oy      = slot->y;
+    uint8_t  opacity = slot->opacity;
 
     for (int row = 0; row < sh; row++) {
         int target_row = oy + row;
@@ -224,11 +238,40 @@ static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
 
             int si    = src_row_base + col * 2;
             int color = (src[si] << 8) | src[si + 1];
-            if (color != MAGIC_COLOR) {
-                int di      = dst_row_base + target_col * 2;
+            if (color == MAGIC_COLOR) continue;
+
+            int di = dst_row_base + target_col * 2;
+
+            if (opacity == 255) {
+                // Fast path — fully opaque, direct copy
                 dst[di]     = src[si];
                 dst[di + 1] = src[si + 1];
+            } else if (opacity > 0) {
+                // Blend path — unpack RGB565, lerp, repack
+                // Note: lsb_first display — bytes are stored swapped
+                uint16_t s16 = (src[si] << 8) | src[si + 1];
+                uint16_t d16 = (dst[di] << 8) | dst[di + 1];
+
+                uint32_t sr = (s16 >> 11) & 0x1F;
+                uint32_t sg = (s16 >>  5) & 0x3F;
+                uint32_t sb =  s16        & 0x1F;
+
+                uint32_t dr = (d16 >> 11) & 0x1F;
+                uint32_t dg = (d16 >>  5) & 0x3F;
+                uint32_t db =  d16        & 0x1F;
+
+                uint32_t a  = opacity;
+                uint32_t ia = 255 - a;
+
+                uint32_t or_ = (sr * a + dr * ia) >> 8;
+                uint32_t og  = (sg * a + dg * ia) >> 8;
+                uint32_t ob  = (sb * a + db * ia) >> 8;
+
+                uint16_t out = (uint16_t)((or_ << 11) | (og << 5) | ob);
+                dst[di]     = (uint8_t)(out >> 8);
+                dst[di + 1] = (uint8_t)(out & 0xFF);
             }
+            // opacity == 0: skip pixel entirely
         }
     }
 }
@@ -602,6 +645,7 @@ static const mp_rom_map_elem_t animation_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_update_slot_pos),     MP_ROM_PTR(&animation_update_slot_pos_obj)     },
     { MP_ROM_QSTR(MP_QSTR_update_slot_buf),     MP_ROM_PTR(&animation_update_slot_buf_obj)     },
     { MP_ROM_QSTR(MP_QSTR_enable_slot),         MP_ROM_PTR(&animation_enable_slot_obj)         },
+    { MP_ROM_QSTR(MP_QSTR_set_slot_opacity),    MP_ROM_PTR(&animation_set_slot_opacity_obj)    },
     { MP_ROM_QSTR(MP_QSTR_set_slot_clip),       MP_ROM_PTR(&animation_set_slot_clip_obj)       },
     { MP_ROM_QSTR(MP_QSTR_draw_all),            MP_ROM_PTR(&animation_draw_all_obj)            },
     { MP_ROM_QSTR(MP_QSTR_fill_background),     MP_ROM_PTR(&animation_fill_background_obj)     },
