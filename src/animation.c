@@ -32,10 +32,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "py/obj.h"
+#include "py/objstr.h"
+#include "py/objmodule.h"
 #include "py/runtime.h"
 #include "py/mpconfig.h"
-#include "py/unichar.h"
+#include "py/unicode.h"
 #include "esp_lcd.h"
+#include "py/builtin.h"
+#include "py/mphal.h"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
