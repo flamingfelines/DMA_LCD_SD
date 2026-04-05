@@ -635,6 +635,35 @@ static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_text_obj, 6, 7, animation_text);
 
+// ─── recolor_buf ─────────────────────────────────────────────────────────────
+// recolor_buf(buf, w, h, color)
+// Replaces every visible (non-transparent) pixel in-place with `color`.
+// Transparent pixels (MAGIC_COLOR) are left untouched.
+// Useful for silhouettes, hit-flash effects, etc.
+
+static mp_obj_t animation_recolor_buf(size_t n_args, const mp_obj_t *args) {
+    mp_buffer_info_t info;
+    mp_get_buffer_raise(args[0], &info, MP_BUFFER_WRITE);
+    uint8_t *buf = (uint8_t *)info.buf;
+
+    int      w     = mp_obj_get_int(args[1]);
+    int      h     = mp_obj_get_int(args[2]);
+    int      color = mp_obj_get_int(args[3]);
+    uint8_t  hi    = (color >> 8) & 0xFF;
+    uint8_t  lo    =  color       & 0xFF;
+
+    int total = w * h;
+    for (int i = 0; i < total; i++) {
+        int      si    = i * 2;
+        uint16_t pixel = ((uint16_t)buf[si] << 8) | buf[si + 1];
+        if (pixel == MAGIC_COLOR) continue;
+        buf[si]     = hi;
+        buf[si + 1] = lo;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_recolor_buf_obj, 4, 4, animation_recolor_buf);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Module table ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -660,6 +689,7 @@ static const mp_rom_map_elem_t animation_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_scroll),              MP_ROM_PTR(&animation_scroll_obj)              },
     { MP_ROM_QSTR(MP_QSTR_write),               MP_ROM_PTR(&animation_write_obj)               },
     { MP_ROM_QSTR(MP_QSTR_text),                MP_ROM_PTR(&animation_text_obj)                },
+    { MP_ROM_QSTR(MP_QSTR_recolor_buf),         MP_ROM_PTR(&animation_recolor_buf_obj)         },
 };
 static MP_DEFINE_CONST_DICT(animation_module_globals, animation_module_globals_table);
 
