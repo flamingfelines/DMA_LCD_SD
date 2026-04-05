@@ -1,371 +1,285 @@
-# ESP-IDF General DMA-Enabled SPI MicroPython driver for ESP32-S3 Devices with ST7789 or compatible displays used in tandem with SD Cards. 
+# ESP-IDF General DMA-Enabled SPI MicroPython Driver
+## For ESP32-S3 Devices with ST7789 or Compatible Displays + SD Cards
 
-****Warning:**** Not tested or coded for working with i80 lcd screens, only SPI. Only tested on XIAO ESP32-S3 and ST7789 display. 
-
-## Overview
-
-This is a driver for MicroPython for devices using the esp_lcd SPI interface, the i80 bus code is legacy code from the previous driver and non-functioning. The driver is written in C and is based on [devbis' st7789_mpy driver.](https://github.com/devbis/st7789_mpy)
-
-Russ Hughes modified the original driver to add the following features:
-
-- Support for esp-idf ESP_LCD intel 8080 parallel and SPI interfaces using DMA.
-- Display framebuffer enabling alpha blending for many drawing methods.
-- Display Rotation.
-- Hardware Scrolling.
-- Writing text using fonts converted from True Type fonts.
-- Drawing text using eight and 16-bit wide bitmap fonts, including 12 bitmap fonts derived from classic pc text mode fonts.
-- Drawing text using 26 included Hershey vector fonts.
-- Drawing JPGs using the TJpgDec - Tiny JPEG Decompressor R0.01d. from http://elm-chan.org/fsw/tjpgd/00index.html.
-- Drawing PNGs using the pngle library from https://github.com/kikuchan/pngle.
-- Writing PNGs from the framebuffer using the PNGenc library from https://github.com/bitbank2/PNGenc
-- Drawing and rotating Polygons and filled Polygons.
-- Several example programs. The example programs require a tft_config.py module to be present. Some examples require a tft_buttons.py module as well. You may need to modify the tft_buttons.py module to match the pins your device uses.
-
-How I modified the original s3lcd driver:
-- Creates a master SPI object instead of the lcd creating it's own exclusive-use one
-- Updated SPI creation to initialize GPIO and BUS_MASTER flags for the ESP v5.4.2 API
-- Created esp_sd, a C-based driver that initiates an SD card using the generap SPI bus above and wraps it to be used by micropython's existing vfs functions. 
-- debug test w/ tft_config and sd_card_config is provided for:
-  - XIAO ESP32-S3 W/ ST7789 DISPLAY
-
-## Pre-compiled firmware
-
-The firmware directory contains pre-compiled MicroPython v1.26 firmware compiled using ESP IDF v5.4.2. In addition, the firmware includes the C driver and several frozen Python font files. See the README.md file in the fonts folder for more information about the font files.
-
-(To compile your own firmware, you will likely have to increase partition size slightly, I increased mine to 2.5MB and that was enough.)
-
-## Driver API
-
-Note: Curly braces `{` and `}` enclose optional parameters and do not imply a Python dictionary.
-
-## PIXEL-BASED IMAGE SCALING
-import pixelscale
-
-scaled = pixelscale.scale2d(image_data, length, width, scale)
-
-## I80_BUS Methods
-  *NON-FUNCTIONING*
-  
-## ESP_SPI Methods
-Create and initialize the SPI bus
-    - esp_spi.SPIBus(MISO_PIN, MOSI_PIN, SCLK_PIN, {SPI_HOST}) (Defaults to SPI2_HOST)
-    *only takes positional arguments
-    
-      - init: initiliazes SPI Bus. 
-      
-      - print: prints SPI handle
-
-## ESP_SD Methods
-Create and initialize SD card #MUST BE DONE AFTER DISPLAY FOR STABILITY
-    - esp_sd.SDCard(spi, int(SD_CS_PIN))
-    * only takes positional arguments
-      - init: initiliazes SD Card. 
-      
-      - print: prints device handle
-
-    Once initialized, you can pass the sd_card object to vfs for standard functions like: vfs.mount(sd_card, '/sd')
-
-## LCD SPI_BUS Methods
-
-- `s3lcd.SPI_BUS(spi_bus, spi_host, dc, {cs, spi_mode, pclk, lcd_cmd_bits, lcd_param_bits, dc_idle_level, dc_as_cmd_phase, dc_low_on_data, octal_mode, lsb_first, swap_color_bytes})`
-
-  This method sets an interface configuration of the SPI bus for the ESPLCD driver. The ESPLCD driver will automatically initialize and deinitialize the SPI bus.
-
-    ### Required positional arguments:
-    - `spi_bus' ESP_SPI object to use
-    - 'spi_host' integer matching whatever host you created the machine.SPI object with.
-    - `dc` D/C pin number
-
-    ### Optional Parameters:
-    - `cs` CS pin number (This is positional, not keyword)
-    - `spi_mode` Traditional SPI mode (0~3)
-    - `pclk` Frequency of pixel clock (Defaults to 40MHz)
-    - `lcd_cmd_bits` Bit-width of LCD command
-    - `lcd_param_bits` Bit-width of LCD parameter
-    - `dc_idle_level`  D/C pin level when idle
-    - `dc_as_cmd_phase` D/C line value is encoded into SPI transaction command phase
-    - `dc_low_on_data` If this flag is enabled, D/C line = 0 means transfer data, D/C line = 1 means transfer command
-    - `octal_mode` transmit using octal mode (8 data lines)
-    - `lsb_first` transmit LSB bit first
-    - `swap_color_bytes` (bool) Swap data byte order
-
-## ESPLCD Methods
-
-- `s3lcd.ESPLCD(lcd_bus, width, height, {reset, rotations, rotation, inversion, dma_rows, options})`
-
-    ### Required positional arguments:
-    - `bus` LCD Bus object created by s3lcd.SPI_BUS()
-    - `width` display width
-    - `height` display height
-
-    ### Optional keyword arguments:
-
-    - `reset` reset pin number
-
-    - `rotations` Creates a custom rotation table. A rotation table is a list of tuples for each `rotation` containing the width, height, x_gap, y_gap, swap_xy, mirror_x, and mirror_y values for each rotation.
-
-      Default `rotations` are included for the following display sizes:
-
-      | Display | Default Orientation Tables |
-      | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-      | 320x480 | ((320, 480, 0, 0, false, true,  false), (480, 320, 0, 0, true,  false, false), (320, 480, 0, 0, false, false, true), (480, 320, 0, 0, true,  true,  true)) |
-      | 240x320 | ((240, 320, 0, 0, false, false, false), (320, 240, 0, 0, true, true, false), (240, 320, 0, 0, false, true, true), (320, 240, 0, 0, true, false, true))         |
-      | 170x320 | ((170, 320, 35, 0, false, false, false), (320, 170, 0, 35, true, true, false), (170, 320, 35, 0, false, true, true), (320, 170, 0, 35, true, false, true))     |
-      | 240x240 | ((240, 240, 0, 0, false, false, false), (240, 240, 0, 0, true, true, false), (240, 240, 0, 80, false, true, true), (240, 240, 80, 0, true, false, true))       |
-      | 135x240 | ((135, 240, 52, 40, false, false, false), (240, 135, 40, 53, true, true, false), (135, 240, 53, 40, false, true, true), (240, 135, 40, 52, true, false, true)) |
-      | 128x160 | ((128, 160, 0, 0, false, false, false), (160, 128, 0, 0, true, true, false), (128, 160, 0, 0, false, true, true), (160, 128, 0, 0, true, false, true))         |
-      | 80x160  | ((80, 160, 26, 1, false, false, false), (160, 80, 1, 26, true, true, false), (80, 160, 26, 1, false, true,  true), (160, 80, 1, 26, true,  false, true))       |
-      | 128x128 | ((128, 128, 2, 1, false, false, false), (128, 128, 1, 2, true, true, false), (128, 128, 2, 3, false, true, true), (128, 128, 3, 2, true, false, true))         |
-
-      You may define up to 4 rotations.
-
-    - `rotation` sets the active display rotation according to the orientation table.
-
-      The default orientation table defines four counterclockwise rotations for 240x320, 240x240, 134x240, 128x160, 80x160, and 128x128 displays with the LCD's ribbon cable at the bottom of the display. The default rotation is Portrait (0 degrees).
-
-      | Index | Rotation
-      | ----- | ------------------------------- |
-      | 0     | Portrait (0 degrees)            |
-      | 1     | Landscape (90 degrees)          |
-      | 2     | Reverse Portrait (180 degrees)  |
-      | 3     | Reverse Landscape (270 degrees) |
-
-    - `inversion` Sets the display color inversion mode if True and clears the color inversion mode if false.
-
-    - `dma_rows` Sets the number of the framebuffer rows to transfer to the display in a single DMA transaction. The default value is 16 rows. Larger values may perform better but use more DMA-capable memory from the ESP-IDF heap. On the other hand, using a large value may starve other ESP-IDF functions like WiFi of memory.
-
-    - `options` Sets driver option flags.
-
-      | Option       | Description                                                                                              |
-      | ------------ | -------------------------------------------------------------------------------------------------------- |
-      | s3lcd.WRAP   | pixels, lines, polygons, and Hershey text will wrap around the display both horizontally and vertically. |
-      | s3lcd.WRAP_H | pixels, lines, polygons, and Hershey text will wrap around the display horizontally.                     |
-      | s3lcd.WRAP_V | pixels, lines, polygons, and Hershey text will wrap around the display vertically.                       |
-
-- `deinit()`
-
-    Frees the buffer memory and deinitializes the LCD SPI_BUF object. Call this method before reinitializing the display without performing a hard reset.
-
-- `idle_mode(value)`
-
-    Set idle mode
-
-    `value`: True to enable idle mode, False to idle disable idle mode.
-
-- `show()`
-
-    Update the display from the framebuffer. You must use the show() method to transfer the framebuffer to the display. This method blocks until the display refresh is complete.
-
-- `inversion_mode(bool)` Sets the display color inversion mode if True, clears the display color inversion mode if False.
-
-- `init()`
-
-  Must be called to initialize the display.
-
-- clear({ 8_bit_color})
-
-    Fast clear the framebuffer by setting the high and low bytes of the color to the specified value.
-
-    Optional parameters:
-        -- 8_bit_color defaults to 0x00 BLACK
-
-- `fill({color, alpha})`
-
-  Fill the framebuffer with the specified color, optionally `alpha` blended with the background. The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `pixel(x, y {, color, alpha})`
-
-  Set the specified pixel to the given `color`. The `color` defaults to WHITE, and the `alpha` defaults to 255.
-
-- `line(x0, y0, x1, y1 {, color, alpha})`
-
-  Draws a single line with the provided `color` from (`x0`, `y0`) to (`x1`, `y1`). The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `hline(x, y, w {, color, alpha})`
-
-  Draws a horizontal line with the provided `color` and `length` in pixels. The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `vline(x, y, length {, color, alpha})`
-
-  Draws a vertical line with the provided `color` and `length` in pixels. The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `rect(x, y, width, height {, color, alpha})`
-
-  Draws a rectangle with the specified dimensions from (`x`, `y'). The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `fill_rect(x, y, width, height {, color, alpha})`
-
-  Fills a rectangle `width` by `height` starting at `x`, `y' with `color` optionally `alpha` blended with the background. The `color` defaults to BLACK, and `alpha` defaults to 255.
-
-- `circle(x, y, r {, color, alpha})`
-
-  Draws a circle with radius `r` centered at the (`x`, `y') coordinates in the given `color`. The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `fill_circle(x, y, r {, color, alpha})`
-
-  Draws a filled circle with radius `r` centered at the (`x`, `y') coordinates in the given `color`. The `color` defaults to BLACK, and the `alpha` defaults to 255.
-
-- `blit_buffer(buffer, x, y, width, height {, alpha})`
-
-  Copy bytes() or bytearray() content to the framebuffer. Note: every color requires 2 bytes in the array, the `alpha` defaults to 255.
-
-- `text(font, s, x, y {, fg, bg, alpha})`
-
-  Writes text to the framebuffer using the specified bitmap `font` with the coordinates as the upper-left corner of the text. The optional arguments `fg` and `bg` can set the foreground and background colors of the text; otherwise, the foreground color defaults to `WHITE`, and the background color defaults to `BLACK`. `alpha` defaults to 255. See the `README.md` in the `fonts/bitmap` directory, for example fonts.
-
-- `write(bitmap_font, s, x, y {, fg, bg, alpha})`
-
-  Writes text to the framebuffer using the specified proportional or Monospace bitmap font module starting with the coordinates as the upper-left corner of the text. The foreground and background colors of the text are set by the optional arguments `fg` and `bg`; otherwise, the foreground color defaults to `WHITE`, and the background color defaults to `BLACK`. The `alpha` defaults to 255.
-
-  See the `README.md` in the `truetype/fonts` directory, for example fonts. Returns the width of the string as printed in pixels. This method accepts UTF8 encoded strings.
-
-  The `font2bitmap` utility creates compatible 1-bit per pixel bitmap modules from Proportional or Monospaced True Type fonts. The character size, foreground, background colors, and characters in the bitmap module may be specified as parameters. Use the -h option for details.
-
-- `write_len(bitap_font, s)`
-
-  Returns the string's width in pixels if printed in the specified font.
-
-- `draw(vector_font, s, x, y {, fg, scale, alpha})`
-
-  Draws text to the framebuffer using the specified Hershey vector font with the coordinates as the lower-left corner of the text. The foreground color of the text can be set by the optional argument `fg`. Otherwise, the foreground color defaults to `WHITE`. The size of the text is modified by specifying a `scale` value. The `scale` value must be larger than 0 and can be a floating-point or an integer value. The `scale` value defaults to 1.0. The `alpha` defaults to 255. See the README.md in the `vector/fonts` directory, for example fonts and the utils directory for a font conversion program.
-
-- `draw_len(vector_font, s {, scale})`
-
-  Returns the string's width in pixels if drawn with the specified font.
-
-- `jpg(jpg, x, y)`
-
-  Draws a JPG file in the framebuffer at the given `x` and `y' coordinates as the upper left corner of the image. This method requires an additional 3100 bytes of memory for its work buffer. The jpg may be a filename or a bytes() or bytearray() object. The jpg will wil be clipped if is not able to fit fully in the framebuffer.
-
-- `jpg_decode(jpg_filename {, x, y, width, height})`
-
-  Decodes a jpg file and returns it or a portion of it as a tuple composed of (buffer, width, height). The buffer is a color565 blit_buffer compatible byte array. The buffer will require width * height * 2 bytes of memory.
-
-  If the optional x, y, width, and height parameters are given, the buffer will only contain the specified area of the image. See examples/T-DISPLAY/clock/clock.py and examples/T-DISPLAY/toasters_jpg/toasters_jpg.py for examples.
-
-- `png(png, x, y)`
-
-  Draws a PNG file in the framebuffer with the upper left corner of the image at the given `x` and `y' coordinates. The png may be a filename or a bytes() or bytearray() object. The png will wil be clipped if it is not able to fit fully in the framebuffer. Transparency is supported; see the alien.py program in the examples/png folder.
-
-- `png_write(file_name{ x, y, width, height})`
-
-  Writes the framebuffer to a png file named `file_name` using PNGenc from https://github.com/bitbank2/PNGenc.
-
-  #### optional parameters:
-    - x: the first column of the framebuffer to start writing.
-    - y: the first row of the framebuffer to start writing.
-    - width: the width of the area to write
-    - height: the height of the area to write
-
-  Returns file size in bytes.
-
-- `polygon_center(polygon)`
-
-   Returns the center of the `polygon` as an (x, y) tuple. The `polygon` should consist of a list of (x, y) tuples forming a closed convex polygon.
-
-- `fill_polygon(polygon, x, y, color {, alpha, angle, center_x, center_y})`
-
-  Draws a filled `polygon` at the `x`, and `y' coordinates in the `color` given. The `alpha` defaults to 255. The polygon may be rotated `angle` radians about the `center_x` and `center_y` points. The polygon should consist of a list of (x, y) tuples forming a closed convex polygon.
-
-  See the TWATCH-2020 `watch.py` demo for an example.
-
-- `polygon(polygon, x, y, color {, alpha, angle, center_x, center_y)`
-
-  Draws a `polygon` at the `x`, and `y' coordinates in the `color` given. The `alpha` defaults to 255. The polygon may be rotated `angle` radians about the `center_x` and `center_y` points. The polygon should consist of a list of (x, y) tuples forming a closed convex polygon.
-
-  See the `roids.py` for an example.
-
-- `bitmap(bitmap, x , y {, alpha, index})` or `bitmap((bitmap_as_bytes, w, h), x , y {, alpha})`
-
-  Draws a bitmap using the specified `x`, `y' coordinates as the upper-left corner of the `bitmap`.
-
-  - If the `bitmap` parameter is a bitmap module, the `index` parameter may be specified to select a specific bitmap from the module. The `index` parameter must be an integer value greater than or equal to 0 and less than the number of bitmaps in the module. The `index` value defaults to 0. 8-bit per pixel.
-
-  - If the `bitmap_module` parameter is a tuple, the tuple must contain a bitmap as a byte array, the width of the bitmap in pixels, and the height of the bitmap in pixels. `alpha` defaults to 255.
-
-  Using the Pillow Python Imaging Library, the `imgtobitmap.py` utility creates compatible 1 to 8-bit per-pixel bitmap modules from image files.
-
-  The `monofont2bitmap.py` utility creates compatible 1 to 8-bit per-pixel bitmap modules from Monospaced True Type fonts. See the `inconsolata_16.py`, `inconsolata_32.py` and `inconsolata_64.py` files in the `examples/mono_fonts` folder for sample modules and the `mono_font.py` program for an example using the generated modules.
-
-  You can specify the character sizes, foreground and background colors, bit per pixel, and characters to include in the bitmap module as parameters. To learn more, use the -h option. Using bit-per-pixel settings larger than one can create antialiased characters at the cost of increased memory usage.
-
-- `width()`
-
-  Returns the current width of the display in pixels. (i.e., a 135x240 display rotated 90 degrees is 240 pixels wide)
-
-- `height()`
-
-  Returns the current height of the display in pixels. (i.e., a 135x240 display rotated 90 degrees is 135 pixels high)
-
-- `rotation(r)`
-
-  Sets the rotation of the logical display in a counterclockwise direction. 0-Portrait (0 degrees), 1-Landscape (90 degrees), 2-Inverse Portrait (180 degrees), 3-Inverse Landscape (270 degrees)
-
-- `scroll(xstep, ystep{, fill=0})`
-
-  Scrolls the framebuffer using software in the given direction.
-
-  ### Required parameters:
-
-  - xstep: Number of pixels to scroll in the x direction. Negative values scroll left, positive values scroll right.
-  - ystep: Number of pixels to scroll in the y direction. Negative values scroll up, positive values scroll down.
-
-  ### Optional parameters:
-
-  - fill: Fill color for the new pixels.
-
-The module exposes predefined colors:
-  `BLACK`, `BLUE`, `RED`, `GREEN`, `CYAN`, `MAGENTA`, `YELLOW`, and `WHITE`
-
-## Hardware Scrolling
-
-The st7789 display controller contains a 240 by 320-pixel frame buffer used to store the pixels for the display. For scrolling, the frame buffer consists of three separate areas: The (`tfa`) top fixed area, the (`height`) scrolling area, and the (`bfa`) bottom fixed area. The `tfa` is the upper portion of the frame buffer in pixels not to scroll. The `height` is the center portion of the frame buffer in pixels to scroll. The `bfa` is the lower portion of the frame buffer in pixels not to scroll. These values control the ability to scroll the entire or a part of the display.
-
-For displays that are 320 pixels high, setting the `tfa` to 0, `height` to 320, and `bfa` to 0 will allow scrolling of the entire display. To scroll a portion of the display, you can set the `tfa` and `bfa` to a non-zero value. `tfa` + `height` + `bfa` = should equal 320; otherwise, the scrolling mode is undefined.
-
-Displays less than 320 pixels high, the `tfa`, `height`, and `bfa` must be adjusted to compensate for the smaller LCD panel. The actual values will vary depending on the configuration of the LCD panel. For example, scrolling the entire 135x240 TTGO T-Display requires a `tfa` value of 40, `height` value of 240, and `bfa` value of 40 (40+240+40=320) because the T-Display LCD shows 240 rows starting at the 40th row of the frame buffer, leaving the last 40 rows of the frame buffer undisplayed.
-
-Other displays, like the Waveshare Pico LCD 1.3-inch 240x240 display, require the `tfa` set to 0, `height` set to 240, and `bfa` set to 80 (0+240+80=320) to scroll the entire display. The Pico LCD 1.3 shows 240 rows starting at the 0th row of the frame buffer, leaving the last 80 rows undisplayed.
-
-The `vscsad` method sets the (VSSA) Vertical Scroll Start Address. The VSSA sets the line in the frame buffer that will be the first line after the `tfa`.
-
-    The ST7789 datasheet warns:
-
-    The value of the vertical scrolling start address is absolute (with referenceto the frame memory), it must not enter the fixed area defined by Vertical Scrolling Definition, otherwise undesirable image will be displayed on the panel.
-
-- `vscrdef(tfa, height, bfa)` Set the vertical scrolling parameters.
-
-  `tfa` is the top fixed area in pixels. The top fixed area is the upper portion of the display frame buffer that will not be scrolled.
-
-  `height` is the total height in pixels of the area scrolled.
-
-  `bfa` is the bottom fixed area in pixels. The bottom fixed area is the lower portion of the display frame buffer that will not be scrolled.
-
-- `vscsad(vssa)` Set the vertical scroll address.
-
-  `vssa` is the vertical scroll start address in pixels. The vertical scroll start address is the line in the frame buffer that will be the first line shown after the TFA.
-
-## Helper functions
-
-- `color565(r, g, b)`
-
-  Pack a color into 2-byte rgb565 format
-
-- `map_bitarray_to_rgb565(bitarray, buffer, width {, color, bg_color})`
-
-  Convert a `bitarray` to the rgb565 color `buffer` suitable for blitting. Bit
-  1 in `bitarray` is a pixel with `color` and 0 - with `bg_color`.
-
-# `animation` C Module — Python API Reference
+> **Warning:** Not tested or coded for working with i80 LCD screens, only SPI. Only tested on XIAO ESP32-S3 with ST7789 display.
 
 ---
 
-## Setup
+## Overview
 
-### `animation.set_display_size(w, h)`
-Set the display dimensions. Call once at startup before any other calls.
-- `w` — display width in pixels
-- `h` — display height in pixels
+This is a driver for MicroPython for devices using the `esp_lcd` SPI interface. The i80 bus code is legacy from the previous driver and non-functioning. The driver is written in C and is based on [devbis' st7789_mpy driver](https://github.com/devbis/st7789_mpy).
+
+Russ Hughes modified the original driver to add:
+
+- Support for esp-idf ESP_LCD Intel 8080 parallel and SPI interfaces using DMA.
+- Display framebuffer enabling alpha blending for many drawing methods.
+- Display rotation, hardware scrolling.
+- Writing text using fonts converted from TrueType fonts.
+- Drawing text using eight and 16-bit wide bitmap fonts.
+- Drawing text using 26 included Hershey vector fonts.
+- Drawing JPGs using TJpgDec (Tiny JPEG Decompressor R0.01d).
+- Drawing PNGs using the pngle library.
+- Writing PNGs from the framebuffer using PNGenc.
+- Drawing and rotating polygons and filled polygons.
+
+How I modified the original s3lcd driver:
+- Creates a master SPI object instead of the LCD creating its own exclusive-use one.
+- Updated SPI creation to initialize GPIO and `BUS_MASTER` flags for the ESP v5.4.2 API.
+- Created `esp_sd`, a C-based driver that initiates an SD card using the general SPI bus and wraps it for use by MicroPython's existing VFS functions.
+- Debug test with `tft_config` and `sd_card_config` is provided for: XIAO ESP32-S3 with ST7789 display.
+
+---
+
+## Pre-compiled Firmware
+
+The firmware directory contains pre-compiled MicroPython v1.26 firmware compiled using ESP-IDF v5.4.2. The firmware includes the C driver and several frozen Python font files. See the `README.md` in the `fonts` folder for more information.
+
+> To compile your own firmware, you will likely need to increase partition size slightly — increasing to 2.5 MB has been sufficient.
+
+---
+
+## Module Overview
+
+| Module | Purpose |
+|---|---|
+| `esp_spi` | Shared SPI bus initialization |
+| `esp_lcd` | LCD panel driver (SPI_BUS + ESPLCD) |
+| `esp_sd` | SD card raw block device |
+| `animation` | Sprite compositing and drawing into a framebuffer |
+| `pixelscale` | Integer pixel art upscaling |
+
+---
+
+## `esp_spi` — SPI Bus
+
+Manages the underlying SPI bus shared between the display and SD card. Must be initialized before either `esp_lcd` or `esp_sd`.
+
+### `esp_spi.SPIBus(miso, mosi, sclk [, host])`
+
+Create an SPI bus object. Only takes positional arguments.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `miso` | int | MISO GPIO pin number |
+| `mosi` | int | MOSI GPIO pin number |
+| `sclk` | int | SCLK GPIO pin number |
+| `host` | int | SPI host ID (optional, defaults to `SPI2_HOST`) |
+
+Valid GPIO range for ESP32-S3: 0–48. Valid hosts: `SPI1_HOST`, `SPI2_HOST`, `SPI3_HOST`.
+
+```python
+import esp_spi
+spi = esp_spi.SPIBus(miso=8, mosi=9, sclk=7)
+spi.init()
+```
+
+### `spi.init()`
+
+Initialize the SPI bus hardware. Must be called before the bus is used by any device. Safe to call multiple times — subsequent calls are no-ops if already initialized.
+
+### `spi.deinit()`
+
+Release the SPI bus hardware. All devices sharing the bus must be deinitialized first.
+
+---
+
+## `esp_lcd` — LCD Display
+
+### `esp_lcd.SPI_BUS(bus, spi_host, dc [, cs, ...])`
+
+Configure the LCD's SPI I/O interface. This wraps the shared SPI bus for use with the `ESPLCD` panel driver.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `bus` | SPIBus | Yes | — | `esp_spi.SPIBus` object |
+| `spi_host` | int | Yes | — | Integer matching the host used when creating the SPIBus |
+| `dc` | int | Yes | — | D/C (data/command) GPIO pin number |
+| `cs` | int | No | `-1` | CS GPIO pin number (positional, not keyword) |
+| `spi_mode` | int | No | `0` | Traditional SPI mode (0–3) |
+| `pclk` | int | No | `40000000` | Pixel clock frequency in Hz |
+| `lcd_cmd_bits` | int | No | `8` | Bit-width of LCD command phase |
+| `lcd_param_bits` | int | No | `8` | Bit-width of LCD parameter phase |
+| `dc_low_on_data` | int | No | `0` | If set, D/C=0 means data, D/C=1 means command |
+| `octal_mode` | bool | No | `False` | Transmit using octal mode (8 data lines) |
+| `lsb_first` | bool | No | `False` | Transmit LSB first |
+| `swap_color_bytes` | bool | No | `False` | Swap byte order of color data |
+
+```python
+import esp_lcd
+lcd_bus = esp_lcd.SPI_BUS(spi, spi_host=2, dc=3, cs=44, pclk=40000000, swap_color_bytes=True)
+```
+
+---
+
+### `esp_lcd.ESPLCD(bus, width, height [, reset, rotation, inversion_mode, dma_rows, color_space])`
+
+Create the display object.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `bus` | SPI_BUS | Yes | — | `esp_lcd.SPI_BUS` object |
+| `width` | int | Yes | — | Display width in pixels |
+| `height` | int | Yes | — | Display height in pixels |
+| `reset` | int | No | `-1` | Reset GPIO pin number (-1 = none) |
+| `rotation` | int | No | `0` | Initial rotation (0–3) |
+| `inversion_mode` | bool | No | `True` | Enable color inversion |
+| `dma_rows` | int | No | `16` | Rows per DMA transfer chunk |
+| `color_space` | int | No | `0` | Color space identifier |
+
+```python
+tft = esp_lcd.ESPLCD(lcd_bus, width=240, height=240, reset=2, rotation=0)
+tft.init()
+```
+
+#### Built-in Rotation Tables
+
+Default rotation tables are provided for the following display sizes:
+
+| Display | Rotations (width, height, x_gap, y_gap, swap_xy, mirror_x, mirror_y) |
+|---|---|
+| 240×240 | Portrait / Landscape / Reverse Portrait / Reverse Landscape |
+| 240×320 | Portrait / Landscape / Reverse Portrait / Reverse Landscape |
+| 170×320 | Portrait / Landscape / Reverse Portrait / Reverse Landscape |
+
+| Index | Rotation |
+|---|---|
+| 0 | Portrait (0°) |
+| 1 | Landscape (90°) |
+| 2 | Reverse Portrait (180°) |
+| 3 | Reverse Landscape (270°) |
+
+---
+
+### `tft.init()`
+
+Initialize the display panel: reset, init sequence, turn on, apply inversion and rotation. Must be called before `blit_buffer`. Also (re-)allocates the DMA transfer buffer.
+
+### `tft.deinit()`
+
+Free the DMA buffer and release the panel handle. Call before reinitializing the display without a hard reset.
+
+### `tft.rotation(r)`
+
+Set the display rotation. `r` is 0–3 (values are wrapped with `% 4`).
+
+```python
+tft.rotation(1)  # landscape
+```
+
+### `tft.inversion_mode(value)`
+
+Enable or disable color inversion. `value` is `True` or `False`.
+
+### `tft.blit_buffer(buf, x, y, w, h)`
+
+Transfer a region of a framebuffer to the display over DMA. The buffer must contain at least `w * h * 2` bytes of RGB565 data. The region is clipped to the display bounds automatically.
+
+Data is transferred in chunks of `dma_rows` rows at a time. If `swap_color_bytes` was set on the bus, byte-swapping is applied per pixel during the transfer.
+
+| Parameter | Description |
+|---|---|
+| `buf` | bytearray or memoryview of RGB565 data |
+| `x` | Destination x (left edge) |
+| `y` | Destination y (top edge) |
+| `w` | Region width in pixels |
+| `h` | Region height in pixels |
+
+```python
+tft.blit_buffer(memoryview(display_buf), 0, 0, 240, 240)
+```
+
+### `tft.png_write(display_buf, filename [, x, y, w, h])`
+
+Save the framebuffer (or a rectangular crop of it) as a PNG file using PNGenc. If the crop parameters are omitted, the entire display area is saved. The PNG is written using level-9 compression.
+
+```python
+tft.png_write(display_buf, "/sd/screenshot.png")
+tft.png_write(display_buf, "/sd/crop.png", 10, 10, 100, 100)
+```
+
+---
+
+## `esp_sd` — SD Card
+
+> **Important:** Initialize the SD card **after** the display for stability.
+
+### `esp_sd.SDCard(bus, cs_pin [, freq_mhz])`
+
+Create an SD card object. Only takes positional arguments.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `bus` | SPIBus | — | Initialized `esp_spi.SPIBus` object |
+| `cs_pin` | int | — | CS GPIO pin number (0–48) |
+| `freq_mhz` | int | `20` | SPI frequency in MHz (1–80) |
+
+```python
+import esp_sd
+sd = esp_sd.SDCard(spi, 41, 20)
+sd.init()
+```
+
+### `sd.init()`
+
+Initialize the SD card over SPI. Detects block count and block size from the card's CSD register. Configures a pull-up on the MISO line after initialization (ESP-IDF 5.4.2 requirement). Safe to call only once — subsequent calls are no-ops if already initialized.
+
+### `sd.readblocks(block_num, buf)`
+
+Read one or more 512-byte blocks starting at `block_num` into `buf`. The number of blocks read is `len(buf) // block_size`. Used by MicroPython VFS internally.
+
+### `sd.writeblocks(block_num, buf)`
+
+Write one or more 512-byte blocks from `buf` starting at `block_num`. Used by MicroPython VFS internally.
+
+### `sd.count()`
+
+Return the total number of blocks on the card.
+
+### `sd.ioctl(op, arg)`
+
+VFS control interface. Supports:
+- `op=4` — return block count
+- `op=5` — return block size (always 512)
+
+### `sd.deinit()`
+
+Remove the SPI device handle and free the card structure.
+
+### Mounting with VFS
+
+Once initialized, pass the SD object directly to MicroPython's VFS:
+
+```python
+import vfs
+vfs.mount(sd, '/sd')
+
+# Standard file I/O now works
+with open('/sd/hello.txt', 'w') as f:
+    f.write('hello')
+```
+
+---
+
+## `animation` — Sprite Compositor
+
+Manages up to 16 sprite "slots" and composites them into a flat RGB565 framebuffer. Transparency is handled via a magic color key. All drawing targets a Python `bytearray` that you manage; hardware blitting is done separately via `tft.blit_buffer`.
+
+**Pipeline per frame:**
+```
+fill_background(display_buf, bg_data)
+→ draw_all(display_buf)
+→ tft.blit_buffer(memoryview(display_buf), 0, 0, w, h)
+```
+
+**Magic transparency color:** `RGB(231, 154, 99)` — RGB565 value `58572` (`0xE49A63`). Pixels of this exact color in any sprite buffer are treated as transparent and skipped during compositing.
+
+---
+
+### Setup
+
+#### `animation.set_display_size(w, h)`
+
+Set the display dimensions. Must be called once at startup before any other `animation` calls. Also call this if the display is rotated to a different width/height.
 
 ```python
 animation.set_display_size(240, 240)
@@ -373,11 +287,11 @@ animation.set_display_size(240, 240)
 
 ---
 
-## Scene Management
+### Scene Management
 
-### `animation.clear_slots()`
-Disable and clear all slots. Call this on every scene transition before
-setting up the new scene's slots.
+#### `animation.clear_slots()`
+
+Disable and clear all 16 slots. Call this on every scene transition before setting up the new scene's slots. Nulls all slot buffers and resets opacity, clip, and enabled state.
 
 ```python
 animation.clear_slots()
@@ -385,52 +299,47 @@ animation.clear_slots()
 
 ---
 
-## Slot Management
+### Slot Management
 
-Slots are drawn in index order — slot 0 is the bottommost layer, higher
-indices draw on top. Up to 16 slots (indices 0–15).
+Slots are drawn in ascending index order — slot 0 is the bottommost layer, slot 15 is topmost. Indices 0–15 are available.
 
 ---
 
-### `animation.set_slot(index, buf, x, y, w, h)`
-Register a sprite buffer in a slot. Enables the slot automatically.
-Use this for initial setup or when the sprite's dimensions change.
-- `index` — slot number (0–15)
-- `buf`   — bytearray of RGB565 pixel data
-- `x`     — x position on screen
-- `y`     — y position on screen
-- `w`     — sprite width in pixels
-- `h`     — sprite height in pixels
+#### `animation.set_slot(index, buf, x, y, w, h)`
+
+Register a new sprite in a slot and enable it. Use this for initial setup or whenever the sprite's pixel dimensions change.
+
+| Parameter | Description |
+|---|---|
+| `index` | Slot number (0–15) |
+| `buf` | bytearray of RGB565 pixel data |
+| `x` | X position on screen |
+| `y` | Y position on screen |
+| `w` | Sprite width in pixels |
+| `h` | Sprite height in pixels |
+
+Resets opacity to 255 and clears any active clipping.
 
 ```python
 animation.set_slot(0, background_data, 0, 0, 240, 240)
-animation.set_slot(1, chao_frame, chao_x, chao_y, 66, 66)
-animation.set_slot(2, ball_frame, ball_x, ball_y, 66, 66)
+animation.set_slot(1, pet_frame, pet_x, pet_y, 66, 66)
 ```
 
 ---
 
-### `animation.update_slot(index, buf, x, y)`
-Update the frame buffer and position of an existing slot.
-Width and height stay unchanged — use `set_slot` if those need to change.
-Best for sprites that change both frame and position every tick (e.g. the chao).
-- `index` — slot number (0–15)
-- `buf`   — new bytearray of RGB565 pixel data
-- `x`     — new x position
-- `y`     — new y position
+#### `animation.update_slot(index, buf, x, y)`
+
+Update a slot's buffer and position simultaneously. Width and height are unchanged — use `set_slot` if those need to change. Best for sprites that change both frame and position every tick.
 
 ```python
-animation.update_slot(1, chao_frame, chao_x, chao_y)
+animation.update_slot(1, pet_frame, pet_x, pet_y)
 ```
 
 ---
 
-### `animation.update_slot_buf(index, buf)`
-Update only the frame buffer of a slot. Position stays unchanged.
-Best for stationary sprites that cycle through animation frames (e.g. an NPC
-that doesn't move but animates in place).
-- `index` — slot number (0–15)
-- `buf`   — new bytearray of RGB565 pixel data
+#### `animation.update_slot_buf(index, buf)`
+
+Update only a slot's frame buffer. Position is unchanged. Best for stationary sprites that cycle through animation frames.
 
 ```python
 animation.update_slot_buf(3, menu_frames[current_menu_frame])
@@ -438,12 +347,9 @@ animation.update_slot_buf(3, menu_frames[current_menu_frame])
 
 ---
 
-### `animation.update_slot_pos(index, x, y)`
-Update only the position of a slot. Frame buffer stays unchanged.
-Best for sprites that slide across the screen without changing frame.
-- `index` — slot number (0–15)
-- `x`     — new x position
-- `y`     — new y position
+#### `animation.update_slot_pos(index, x, y)`
+
+Update only a slot's screen position. Frame buffer is unchanged. Best for sprites that slide across the screen without changing frame.
 
 ```python
 animation.update_slot_pos(4, enemy_x, enemy_y)
@@ -451,42 +357,81 @@ animation.update_slot_pos(4, enemy_x, enemy_y)
 
 ---
 
-### `animation.enable_slot(index, enabled)`
-Show or hide a slot without clearing its data.
-Useful for conditional elements like fruit, items, or enemies that appear
-and disappear without needing to re-register the slot each time.
-- `index`   — slot number (0–15)
-- `enabled` — `True` to show, `False` to hide
+#### `animation.enable_slot(index, enabled)`
+
+Show or hide a slot without clearing its data. Re-enabling restores the last registered buffer and position.
 
 ```python
-animation.enable_slot(5, fruit_present)
+animation.enable_slot(5, fruit_present)   # True = show, False = hide
 ```
 
 ---
 
-### `animation.set_slot_clip(index, clip_bottom)`
-Enable vertical clipping on a slot. Pixels at or below `clip_bottom` (in
-screen coordinates) will not be drawn. Pass `0` to disable clipping.
-Useful for sprites that emerge from or sink into a surface (e.g. a chomper
-rising out of water).
-- `index`        — slot number (0–15)
-- `clip_bottom`  — y coordinate below which pixels are hidden (0 = disabled)
+#### `animation.set_slot_opacity(index, opacity)`
+
+Set the compositing opacity for a slot. Applied per-pixel during `draw_all`.
+
+| Value | Effect |
+|---|---|
+| `255` | Fully opaque — fast path, direct pixel copy |
+| `1–254` | Alpha-blended with the background using RGB565 lerp |
+| `0` | Completely invisible — pixel is skipped entirely |
+
+The blend formula unpacks RGB565 channels, linearly interpolates between source and destination, and repacks. Note that RGB565 has less precision than full 8-bit blending.
 
 ```python
-animation.set_slot_clip(6, water_surface_y)  # hide chomper below waterline
-animation.set_slot_clip(6, 0)                # remove clipping
+animation.set_slot_opacity(2, 128)   # 50% transparent
+animation.set_slot_opacity(2, 255)   # fully opaque
 ```
 
 ---
 
-## Drawing
+#### `animation.set_slot_clip(index, clip_x, clip_x_dir, clip_y, clip_y_dir)`
 
-### `animation.fill_background(display_buf, bg_data)`
-Fast memcpy of `bg_data` into `display_buf`. Call this every frame before
-`draw_all` to reset the buffer. Faster than putting the background in slot 0
-because it skips the per-pixel transparency check.
-- `display_buf` — writable bytearray that will be sent to the display
-- `bg_data`     — bytearray of background RGB565 data (must be >= display_buf size)
+Apply axis-aligned pixel clipping to a slot. Clipping operates in screen coordinates and is applied during `draw_all`. Pass `0` for a clip value to disable that axis.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `index` | int | Slot number (0–15) |
+| `clip_x` | int | Horizontal cutoff in screen pixels (0 = disabled) |
+| `clip_x_dir` | str | `"after"` to hide pixels at x ≥ clip_x; `"before"` to hide pixels at x < clip_x |
+| `clip_y` | int | Vertical cutoff in screen pixels (0 = disabled) |
+| `clip_y_dir` | str | `"after"` to hide pixels at y ≥ clip_y; `"before"` to hide pixels at y < clip_y |
+
+```python
+# Hide everything at or below the waterline (clip bottom of sprite)
+animation.set_slot_clip(6, 0, "after", water_surface_y, "after")
+
+# Hide everything above a reveal line (wipe-in from top)
+animation.set_slot_clip(6, 0, "after", reveal_y, "before")
+
+# Clip the right half of a slot horizontally
+animation.set_slot_clip(6, 120, "after", 0, "after")
+
+# Disable all clipping
+animation.set_slot_clip(6, 0, "after", 0, "after")
+```
+
+---
+
+#### `animation.recolor_slot(index, color)`
+
+Replace every non-transparent pixel in a slot's buffer with `color` (RGB565). The magic transparency color is preserved. Modifies the buffer in place permanently — use a copy if the original colors are needed again.
+
+Useful for hit-flash effects (flash white), silhouettes, or team-color tinting.
+
+```python
+WHITE = 0xFFFF
+animation.recolor_slot(1, WHITE)   # flash sprite white on hit
+```
+
+---
+
+### Compositing
+
+#### `animation.fill_background(display_buf, bg_data)`
+
+Fast `memcpy` of `bg_data` into `display_buf`. Call this every frame before `draw_all` to reset the buffer to the background image. Faster than placing the background in slot 0 because it skips the per-pixel transparency check entirely.
 
 ```python
 animation.fill_background(display_buf, background_data)
@@ -494,45 +439,32 @@ animation.fill_background(display_buf, background_data)
 
 ---
 
-### `animation.draw_all(display_buf)`
-Composite all enabled slots onto `display_buf` in slot order (0 = bottom).
-Pixels matching the magic transparency color `RGB(231, 154, 99)` are skipped.
-Call after `fill_background`, then send `display_buf` to the display.
-- `display_buf` — writable bytearray to composite into
+#### `animation.draw_all(display_buf)`
+
+Composite all enabled, non-null slots onto `display_buf` in ascending slot order (slot 0 = bottom). For each sprite pixel, the magic color is skipped; all others are written with opacity blending applied.
 
 ```python
 animation.draw_all(display_buf)
-tft.blit_buffer(memoryview(display_buf), 0, 0, 240, 240)
 ```
 
 ---
 
-## Buffer Utilities
+### Buffer Utilities
 
-### `animation.flip_buf_horizontal(src, dst, w, h)`
-Flip a sprite buffer horizontally (mirror left/right) into `dst`.
-Use this at load time to pre-compute a flipped version of a frame so you
-can swap between normal and flipped with just `update_slot_buf`.
-- `src` — source bytearray (RGB565)
-- `dst` — destination bytearray (must be same size as src)
-- `w`   — sprite width in pixels
-- `h`   — sprite height in pixels
+#### `animation.flip_buf_horizontal(src, dst, w, h)`
+
+Mirror a sprite buffer horizontally (left↔right) into `dst`. Use at load time to pre-compute flipped versions so you can swap frames with `update_slot_buf` instead of re-flipping every frame.
 
 ```python
-chao_flipped = bytearray(len(chao_frame))
-animation.flip_buf_horizontal(chao_frame, chao_flipped, 66, 66)
+pet_flipped = bytearray(len(pet_frame))
+animation.flip_buf_horizontal(pet_frame, pet_flipped, 66, 66)
 ```
 
 ---
 
-### `animation.flip_buf_vertical(src, dst, w, h)`
-Flip a sprite buffer vertically (mirror top/bottom) into `dst`.
-Use this at load time to pre-compute upside-down frames (e.g. a chomper
-that flips when falling).
-- `src` — source bytearray (RGB565)
-- `dst` — destination bytearray (must be same size as src)
-- `w`   — sprite width in pixels
-- `h`   — sprite height in pixels
+#### `animation.flip_buf_vertical(src, dst, w, h)`
+
+Mirror a sprite buffer vertically (top↔bottom) into `dst`. Use at load time to pre-compute upside-down frames.
 
 ```python
 chomper_flipped = bytearray(len(chomper_frame))
@@ -541,25 +473,113 @@ animation.flip_buf_vertical(chomper_frame, chomper_flipped, 96, 64)
 
 ---
 
-## Typical Frame Loop Pattern
+### Drawing Functions
+
+These functions draw directly into a framebuffer bytearray without going through the slot system. Useful for HUD elements, debug overlays, or any content that doesn't benefit from the slot compositor.
+
+---
+
+#### `animation.fill_rect(display_buf, x, y, w, h, color)`
+
+Fill a solid rectangle into `display_buf`. Automatically clipped to display bounds.
+
+| Parameter | Description |
+|---|---|
+| `display_buf` | Writable bytearray (RGB565 framebuffer) |
+| `x` | Left edge |
+| `y` | Top edge |
+| `w` | Width in pixels |
+| `h` | Height in pixels |
+| `color` | RGB565 fill color (16-bit integer) |
 
 ```python
-# ── init (once) ──────────────────────────────────────────────
+BLACK = 0x0000
+animation.fill_rect(display_buf, 10, 10, 100, 50, BLACK)
+```
+
+---
+
+#### `animation.scroll(display_buf, dx, dy [, fill_color])`
+
+Scroll the entire framebuffer by `(dx, dy)` pixels using software. The vacated region is filled with `fill_color` (defaults to `0`, black). Iteration order is chosen automatically to avoid read-before-write overlap.
+
+| Parameter | Description |
+|---|---|
+| `dx` | Pixels to scroll horizontally (positive = right, negative = left) |
+| `dy` | Pixels to scroll vertically (positive = down, negative = up) |
+| `fill_color` | RGB565 color for newly exposed pixels (optional, default `0`) |
+
+```python
+animation.scroll(display_buf, 0, -2)          # scroll up 2 pixels, black fill
+animation.scroll(display_buf, 4, 0, 0xFFFF)   # scroll right 4 pixels, white fill
+```
+
+---
+
+#### `animation.write(font, text, x, y, fg, display_buf [, bg])`
+
+Draw proportional or monospace TrueType-derived bitmap text into `display_buf`. Supports UTF-8 encoded strings and integer character codes. The font module must have `BPP`, `HEIGHT`, `OFFSET_WIDTH`, `WIDTHS`, `OFFSETS`, `BITMAPS`, and `MAP` keys.
+
+| Parameter | Description |
+|---|---|
+| `font` | Font module object |
+| `text` | String (UTF-8) or integer character code |
+| `x` | Left edge of the text |
+| `y` | Top edge of the text |
+| `fg` | Foreground color (RGB565) |
+| `display_buf` | Writable bytearray (RGB565 framebuffer) |
+| `bg` | Background color (RGB565), optional — defaults to `-1` (transparent) |
+
+```python
+import vga2_bold_16x32 as font
+WHITE = 0xFFFF
+animation.write(font, "Score: 100", 10, 5, WHITE, display_buf)
+animation.write(font, "Score: 100", 10, 5, WHITE, display_buf, 0x0000)  # black bg
+```
+
+---
+
+#### `animation.text(font, text, x, y, fg, display_buf [, bg])`
+
+Draw fixed-width bitmap font text into `display_buf`. The font module must have `WIDTH`, `HEIGHT`, `FIRST`, `LAST`, and `FONT` keys (standard MicroPython fixed-width bitmap font format). Accepts integer character codes or strings.
+
+| Parameter | Description |
+|---|---|
+| `font` | Fixed-width font module object |
+| `text` | String or integer character code |
+| `x` | Left edge of the text |
+| `y` | Top edge of the text |
+| `fg` | Foreground color (RGB565) |
+| `display_buf` | Writable bytearray (RGB565 framebuffer) |
+| `bg` | Background color (RGB565), optional — defaults to `-1` (transparent) |
+
+```python
+import font6x8
+animation.text(font6x8, "Hello!", 0, 0, 0xFFFF, display_buf)
+```
+
+---
+
+### Typical Frame Loop
+
+```python
+# ── init (once) ───────────────────────────────────────────────────────────
 animation.set_display_size(240, 240)
 
-# ── scene setup (once per scene transition) ──────────────────
+# ── scene setup (once per scene transition) ───────────────────────────────
 animation.clear_slots()
-animation.set_slot(1, chao_frame,  chao_x,  chao_y,  66, 66)
-animation.set_slot(2, ball_frame,  ball_x,  ball_y,  66, 66)
+animation.set_slot(1, pet_frame,  pet_x,  pet_y,  66, 66)
+animation.set_slot(2, accessory_frame,  accessory_x,  accessory_y,  66, 66)
 animation.set_slot(3, menu_frame,  menu_x,  0,       24, 24)
 animation.set_slot(4, fruit_frame, fruit_x, fruit_y, 16, 16)
-animation.enable_slot(4, False)  # hidden until fruit spawns
+animation.enable_slot(4, False)          # hidden until fruit spawns
+animation.set_slot_opacity(2, 180)       # accessory is slightly transparent
 
-# ── each frame ───────────────────────────────────────────────
-animation.update_slot(1, chao_frame, chao_x, chao_y)   # frame + pos changed
-animation.update_slot(2, ball_frame, ball_x, ball_y)   # frame + pos changed
-animation.update_slot_buf(3, menu_frames[menu_idx])    # pos fixed, frame changed
-animation.enable_slot(4, fruit_present)                # show/hide as needed
+# ── each frame ────────────────────────────────────────────────────────────
+animation.update_slot(1, pet_frame, pet_x, pet_y)    # frame + pos changed
+animation.update_slot(2, accessory_frame, accessory_x, accessory_y)    # frame + pos changed
+animation.update_slot_buf(3, menu_frames[menu_idx])     # pos fixed, frame changed
+animation.enable_slot(4, fruit_present)                 # show/hide as needed
 
 animation.fill_background(display_buf, background_data)
 animation.draw_all(display_buf)
@@ -568,112 +588,97 @@ tft.blit_buffer(memoryview(display_buf), 0, 0, 240, 240)
 
 ---
 
-## Notes
+### Notes
 
-- The magic transparency color is hardcoded as `RGB(231, 154, 99)` — hex `0xE49A63`,
-  packed RGB565 value `58572`. Pixels of this color in any sprite are treated as
-  transparent and not written to `display_buf`.
-- Slot 0 is reserved by convention for the background, but there is no enforcement.
-  Using `fill_background` for the background and starting sprites at slot 1 is
-  recommended since it avoids a per-pixel transparency check on the background.
-- Slots retain their data after `enable_slot(index, False)` — re-enabling them
-  restores the last registered buffer and position.
-- `clear_slots()` nulls out all buffers and disables all slots. Always call it
-  before setting up a new scene to avoid stale slots bleeding through.
+- The magic transparency color is hardcoded as `RGB(231, 154, 99)` — RGB565 packed value `58572` (`0xE49A63`). Sprite pixels of this exact color are always skipped during compositing.
+- Slot 0 is reserved by convention for the background, but is not enforced. Using `fill_background` instead of slot 0 is recommended — it skips per-pixel transparency checks on the background.
+- Slots retain their data after `enable_slot(index, False)`. Re-enabling restores the last registered buffer and position.
+- `clear_slots()` nulls all buffers and disables all slots. Always call it before setting up a new scene.
+- `recolor_slot` modifies the buffer permanently in place. Keep a copy of the original if you need to restore colors.
+- `set_slot_clip` evaluates clipping in screen coordinates, not sprite-local coordinates.
 
-# Building the firmware
+---
 
-See the MicroPython [Getting Started](https://docs.micropython.org/en/latest/develop/gettingstarted.html)
-page for more detailed information on building the MicroPython firmware.
+## `pixelscale` — Pixel Art Upscaling
 
-## Clone the Repositories
+Fast integer-factor upscaling for RGB565 sprite data. Each source pixel is expanded into an `n × n` block in the output. Useful for rendering small pixel-art sprites at 2× or 3× on higher-resolution displays.
 
+### `pixelscale.scale2d(src_buffer, width, height, scale)`
 
+Scale a 2D RGB565 image by an integer factor.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `src_buffer` | bytearray | Source RGB565 pixel data |
+| `width` | int | Source image width in pixels |
+| `height` | int | Source image height in pixels |
+| `scale` | int | Integer scale factor (1–16) |
+
+Returns a **new bytearray** of size `(width × scale) × (height × scale) × 2` bytes. The source buffer is not modified.
+
+Scale factor must be between 1 and 16 inclusive; values outside this range raise `ValueError`.
+
+```python
+import pixelscale
+
+# Scale a 32×32 sprite to 64×64 (2×)
+big = pixelscale.scale2d(sprite_data, 32, 32, 2)
+
+# Scale a 16×16 icon to 48×48 (3×) and put it in a slot
+scaled = pixelscale.scale2d(icon_data, 16, 16, 3)
+animation.set_slot(5, scaled, icon_x, icon_y, 48, 48)
 ```
+
+The scaling is performed using a single read per source pixel with a fast inner loop for horizontal repetition, making it efficient for frame-by-frame sprite animation.
+
+---
+
+## Building the Firmware
+
+See the MicroPython [Getting Started](https://docs.micropython.org/en/latest/develop/gettingstarted.html) page for detailed information.
+
+### Clone the Repositories
+
+```bash
 git clone git@github.com:micropython/micropython.git
 git clone https://github.com/russhughes/s3lcd.git
 ```
 
-Compile the cross compiler if you haven't already
+Compile the cross compiler if you haven't already:
 
-```
+```bash
 make -C micropython/mpy-cross
 ```
 
-## ESP32 MicroPython 1.14 thru 1.19 
+### ESP32 MicroPython 1.20 and Later
 
-Change to the ESP32 port directory
+> Use full path addresses for files if something is not working.
 
-```
-cd micropython/ports/esp32
-```
-
-Compile the module with specified USER_C_MODULES dir.
-
-```
-make USER_C_MODULES=../../../../s3lcd/src/micropython.cmake clean submodules all
-```
-
-Erase the target device if this is the first time uploading this
-firmware
-
-```
-make USER_C_MODULES=../../../../s3lcd/src/micropython.cmake erase
-```
-
-Upload the new firmware
-
-```
-make USER_C_MODULES=../../../../s3lcd/src/micropython.cmake deploy
-```
-
-## ESP32 MicroPython 1.20 and later **use full addresses for files if its not working.**
-
-
-Change to the ESP32 port directory, and build the firmware
-
-```
+```bash
 cd micropython/ports/esp32
 
 make \
-    BOARD=ESP32_GENERIC \
-    BOARD_VARIANT=SPIRAM \
+    BOARD=ESP32_GENERIC_S3 \
     USER_C_MODULES=../../../../s3lcd/src/micropython.cmake \
     FROZEN_MANIFEST=../../../../s3lcd/manifest.py \
     clean submodules all
 ```
 
-Erase the flash and deploy on your device
+Erase and deploy:
 
-```
+```bash
 make \
-    BOARD=ESP32_GENERIC \
-    BOARD_VARIANT=SPIRAM \
+    BOARD=ESP32_GENERIC_S3 \
     USER_C_MODULES=../../../../s3lcd/src/micropython.cmake \
     FROZEN_MANIFEST=../../../../s3lcd/manifest.py \
     erase deploy
 ```
 
-## RP2040 MicroPython 1.20 and later **Untested with this driver**
+---
 
-Change to the RP2 port directory, and build the firmware
+## Thanks
 
-```
-cd micropython/ports/rp2
-make \
-    BOARD=RPI_PICO \
-    FROZEN_MANIFEST=../../../../gc9a01c/manifest.py \
-    USER_C_MODULES=../../../gc9a01c/src/micropython.cmake \
-    clean submodules all
-```
-
-Flash the firmware.uf2 file from the build-${BOARD} directory to your device.
-
-## Thanks from Russ go out to:
-
-- https://github.com/devbis for the original driver this is based on.
-- https://github.com/hklang10 for letting me know of the new mp_raise_ValueError().
-- https://github.com/aleggon for finding the correct offsets for 240x240 displays and for discovering issues compiling STM32 ports.
-
-## Additional Thanks:
-  - https://github.com/russhughes for providing such a robust lcd driver. I learned a lot about custom firmware making this driver for my project. 
+- [devbis](https://github.com/devbis) — original driver this is based on.
+- [hklang10](https://github.com/hklang10) — for the updated `mp_raise_ValueError()`.
+- [aleggon](https://github.com/aleggon) — correct offsets for 240×240 displays and STM32 compile fixes.
+- [russhughes](https://github.com/russhughes) — for providing such a robust LCD driver.
