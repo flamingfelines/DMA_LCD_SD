@@ -7,7 +7,7 @@
 
 ## Overview
 
-This is a driver for MicroPython for devices using the `esp_lcd` SPI interface. The i80 bus code is legacy from the previous driver and non-functioning. The driver is written in C and is based on [devbis' st7789_mpy driver](https://github.com/devbis/st7789_mpy).
+This is a driver for MicroPython for devices using the `esp_lcd` SPI interface. The driver is written in C and is based on [devbis' st7789_mpy driver](https://github.com/devbis/st7789_mpy).
 
 Russ Hughes modified the original driver to add:
 
