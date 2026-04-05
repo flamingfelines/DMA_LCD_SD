@@ -635,34 +635,35 @@ static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_text_obj, 6, 7, animation_text);
 
-// ─── recolor_buf ─────────────────────────────────────────────────────────────
-// recolor_buf(buf, w, h, color)
-// Replaces every visible (non-transparent) pixel in-place with `color`.
-// Transparent pixels (MAGIC_COLOR) are left untouched.
-// Useful for silhouettes, hit-flash effects, etc.
+// ─── recolor_slot ────────────────────────────────────────────────────────────
+// recolor_slot(index, color)
+// Replaces every visible (non-transparent) pixel in the slot's sprite buffer
+// with `color`. Useful for silhouettes, hit-flash effects, etc.
 
-static mp_obj_t animation_recolor_buf(size_t n_args, const mp_obj_t *args) {
-    mp_buffer_info_t info;
-    mp_get_buffer_raise(args[0], &info, MP_BUFFER_WRITE);
-    uint8_t *buf = (uint8_t *)info.buf;
+static mp_obj_t animation_recolor_slot(mp_obj_t idx_in, mp_obj_t color_in) {
+    int idx = mp_obj_get_int(idx_in);
+    if (idx < 0 || idx >= MAX_SLOTS)
+        mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
 
-    int      w     = mp_obj_get_int(args[1]);
-    int      h     = mp_obj_get_int(args[2]);
-    int      color = mp_obj_get_int(args[3]);
-    uint8_t  hi    = (color >> 8) & 0xFF;
-    uint8_t  lo    =  color       & 0xFF;
+    sprite_slot_t *slot = &slots[idx];
+    if (slot->buf == NULL)
+        mp_raise_ValueError(MP_ERROR_TEXT("slot has no buffer"));
 
-    int total = w * h;
+    int     color = mp_obj_get_int(color_in);
+    uint8_t hi    = (color >> 8) & 0xFF;
+    uint8_t lo    =  color       & 0xFF;
+
+    int total = slot->w * slot->h;
     for (int i = 0; i < total; i++) {
         int      si    = i * 2;
-        uint16_t pixel = ((uint16_t)buf[si] << 8) | buf[si + 1];
+        uint16_t pixel = ((uint16_t)slot->buf[si] << 8) | slot->buf[si + 1];
         if (pixel == MAGIC_COLOR) continue;
-        buf[si]     = hi;
-        buf[si + 1] = lo;
+        slot->buf[si]     = hi;
+        slot->buf[si + 1] = lo;
     }
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_recolor_buf_obj, 4, 4, animation_recolor_buf);
+static MP_DEFINE_CONST_FUN_OBJ_2(animation_recolor_slot_obj, animation_recolor_slot);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Module table ─────────────────────────────────────────────────────────────
@@ -689,7 +690,7 @@ static const mp_rom_map_elem_t animation_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_scroll),              MP_ROM_PTR(&animation_scroll_obj)              },
     { MP_ROM_QSTR(MP_QSTR_write),               MP_ROM_PTR(&animation_write_obj)               },
     { MP_ROM_QSTR(MP_QSTR_text),                MP_ROM_PTR(&animation_text_obj)                },
-    { MP_ROM_QSTR(MP_QSTR_recolor_buf),         MP_ROM_PTR(&animation_recolor_buf_obj)         },
+    { MP_ROM_QSTR(MP_QSTR_recolor_slot),        MP_ROM_PTR(&animation_recolor_slot_obj)        },
 };
 static MP_DEFINE_CONST_DICT(animation_module_globals, animation_module_globals_table);
 
