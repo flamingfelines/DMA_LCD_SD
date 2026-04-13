@@ -55,16 +55,28 @@ typedef struct {
     int16_t   x, y, w, h;
     bool      enabled;
     uint8_t   opacity;         // 0 = invisible, 255 = fully opaque (default)
-    // Vertical clip
+
+    // Vertical clip (single edge)
     int16_t   clip_y;
     bool      clip_y_enabled;
     bool      clip_y_after;   // true = hide y >= clip_y  ("after")
                                // false = hide y <  clip_y  ("before")
-    // Horizontal clip
+    // Horizontal clip (single edge)
     int16_t   clip_x;
     bool      clip_x_enabled;
     bool      clip_x_after;   // true = hide x >= clip_x  ("after")
                                // false = hide x <  clip_x  ("before")
+
+    // Vertical crop (range)
+    int16_t   crop_y0, crop_y1;
+    bool      crop_y_enabled;
+    bool      crop_y_between; // true = hide y in  [y0, y1]  ("between")
+                               // false = hide y out [y0, y1]  ("outside")
+    // Horizontal crop (range)
+    int16_t   crop_x0, crop_x1;
+    bool      crop_x_enabled;
+    bool      crop_x_between; // true = hide x in  [x0, x1]  ("between")
+                               // false = hide x out [x0, x1]  ("outside")
 } sprite_slot_t;
 
 static sprite_slot_t slots[MAX_SLOTS];
@@ -209,6 +221,37 @@ static mp_obj_t animation_set_slot_clip(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_clip_obj, 5, 5, animation_set_slot_clip);
 
+// ─── set_slot_crop ────────────────────────────────────────────────────────────
+// set_slot_crop(index, x0, x1, crop_x_mode, y0, y1, crop_y_mode)
+// x0/x1, y0/y1 : pixel range (inclusive on both ends); 0,0 = axis disabled
+// mode : "between" → hide pixels WITHIN  [n0, n1]
+//        "outside" → hide pixels OUTSIDE [n0, n1]  (i.e. keep only the window)
+
+static mp_obj_t animation_set_slot_crop(size_t n_args, const mp_obj_t *args) {
+    int idx = mp_obj_get_int(args[0]);
+    if (idx < 0 || idx >= MAX_SLOTS)
+        mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
+
+    int16_t     x0     = (int16_t)mp_obj_get_int(args[1]);
+    int16_t     x1     = (int16_t)mp_obj_get_int(args[2]);
+    const char *cx_mode = mp_obj_str_get_str(args[3]);
+    int16_t     y0     = (int16_t)mp_obj_get_int(args[4]);
+    int16_t     y1     = (int16_t)mp_obj_get_int(args[5]);
+    const char *cy_mode = mp_obj_str_get_str(args[6]);
+
+    slots[idx].crop_x0        = x0;
+    slots[idx].crop_x1        = x1;
+    slots[idx].crop_x_enabled = (x0 != 0 || x1 != 0);
+    slots[idx].crop_x_between = (cx_mode[0] == 'b'); // 'b'etween vs 'o'utside
+
+    slots[idx].crop_y0        = y0;
+    slots[idx].crop_y1        = y1;
+    slots[idx].crop_y_enabled = (y0 != 0 || y1 != 0);
+    slots[idx].crop_y_between = (cy_mode[0] == 'b');
+
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_crop_obj, 7, 7, animation_set_slot_crop);
 // ─── Internal blit ───────────────────────────────────────────────────────────
 
 static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
@@ -227,6 +270,10 @@ static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
             if ( slot->clip_y_after && target_row >= slot->clip_y) continue;
             if (!slot->clip_y_after && target_row <  slot->clip_y) continue;
         }
+        if (slot->crop_y_enabled) {
+            bool inside = (target_row >= slot->crop_y0 && target_row <= slot->crop_y1);
+            if (slot->crop_y_between ? inside : !inside) continue;
+        }
 
         int src_row_base = row * sw * 2;
         int dst_row_base = target_row * display_w * 2;
@@ -238,6 +285,10 @@ static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
             if (slot->clip_x_enabled) {
                 if ( slot->clip_x_after && target_col >= slot->clip_x) continue;
                 if (!slot->clip_x_after && target_col <  slot->clip_x) continue;
+            }
+            if (slot->crop_x_enabled) {
+                bool inside = (target_col >= slot->crop_x0 && target_col <= slot->crop_x1);
+                if (slot->crop_x_between ? inside : !inside) continue;
             }
 
             int si    = src_row_base + col * 2;
