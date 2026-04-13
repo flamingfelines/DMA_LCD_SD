@@ -11,7 +11,7 @@ Requires argparse, importlib and pypng
 """
 
 import os
-import importlib
+import importlib.util
 import png
 import argparse
 
