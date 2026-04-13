@@ -732,6 +732,7 @@ static const mp_rom_map_elem_t animation_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_enable_slot),         MP_ROM_PTR(&animation_enable_slot_obj)         },
     { MP_ROM_QSTR(MP_QSTR_set_slot_opacity),    MP_ROM_PTR(&animation_set_slot_opacity_obj)    },
     { MP_ROM_QSTR(MP_QSTR_set_slot_clip),       MP_ROM_PTR(&animation_set_slot_clip_obj)       },
+    { MP_ROM_QSTR(MP_QSTR_set_slot_crop),       MP_ROM_PTR(&animation_set_slot_crop_obj)       },
     { MP_ROM_QSTR(MP_QSTR_draw_all),            MP_ROM_PTR(&animation_draw_all_obj)            },
     { MP_ROM_QSTR(MP_QSTR_fill_background),     MP_ROM_PTR(&animation_fill_background_obj)     },
     { MP_ROM_QSTR(MP_QSTR_flip_buf_horizontal), MP_ROM_PTR(&animation_flip_buf_horizontal_obj) },
