@@ -101,6 +101,8 @@ static mp_obj_t animation_clear_slots(void) {
         slots[i].opacity        = 255;
         slots[i].clip_y_enabled = false;
         slots[i].clip_x_enabled = false;
+        slots[i].crop_y_enabled = false;
+        slots[i].crop_x_enabled = false;
     }
     return mp_const_none;
 }
