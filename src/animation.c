@@ -27,10 +27,26 @@
  *
  * All drawing targets a Python bytearray (display_buf) that you manage.
  * Hardware init/blit lives in esp_lcd.c (ESPLCD).
+ *
+ * Slot 16 (MAX_SLOTS-1) is the reserved top-layer text overlay. Set it up
+ * with set_slot(16, buf, 0, 0, w, h) and write()/text() will default to it.
+ *
+ * Movement:
+ *   set_slot_target(idx, tx, ty, vel)  — start moving toward (tx,ty) at
+ *                                        vel pixels/second in a straight line.
+ *   clear_slot_target(idx)             — cancel in-flight movement.
+ *   update_movement()                  — call once per frame; advances all
+ *                                        moving slots using internal ticks_ms.
+ *
+ *   Positions are tracked as floats (fx, fy) for sub-pixel accuracy and
+ *   snapped to int16_t (x, y) for rendering. Calling set_slot_target() at
+ *   any time restarts from the current float position toward the new target
+ *   at the new velocity, so direction changes are immediate and smooth.
  */
 
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>          // sqrtf
 #include "py/obj.h"
 #include "py/objstr.h"
 #include "py/objmodule.h"
@@ -43,8 +59,11 @@
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-#define MAX_SLOTS    16
-#define MAGIC_COLOR  58572   // RGB565 transparency key: RGB(231,154,99)
+// Slots 0-15 are general-purpose sprites.
+// Slot 16 is the reserved top-layer text overlay (written last by draw_all).
+#define MAX_SLOTS    17
+#define TEXT_SLOT    16        // default target for write() / text()
+#define MAGIC_COLOR  58572     // RGB565 transparency key: RGB(231,154,99)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Slot system ──────────────────────────────────────────────────────────────
@@ -55,6 +74,15 @@ typedef struct {
     int16_t   x, y, w, h;
     bool      enabled;
     uint8_t   opacity;         // 0 = invisible, 255 = fully opaque (default)
+
+    // ── Sub-pixel position & movement ────────────────────────────────────────
+    // fx/fy track the true float position; x/y are snapped for rendering.
+    // set_slot / update_slot_pos keep fx/fy in sync when you move a slot
+    // directly so that subsequent set_slot_target() starts from the right place.
+    float     fx, fy;
+    float     target_x, target_y;
+    float     velocity;        // pixels per second; 0 = not moving
+    bool      has_target;      // true while a movement is in progress
 
     // Vertical clip (single edge)
     int16_t   clip_y;
@@ -83,6 +111,11 @@ static sprite_slot_t slots[MAX_SLOTS];
 static int16_t display_w = 240;
 static int16_t display_h = 240;
 
+// ─── Movement timing ─────────────────────────────────────────────────────────
+
+static uint32_t last_move_ticks = 0;
+static bool     move_ticks_init  = false;
+
 // ─── set_display_size ────────────────────────────────────────────────────────
 
 static mp_obj_t animation_set_display_size(mp_obj_t w_in, mp_obj_t h_in) {
@@ -103,7 +136,12 @@ static mp_obj_t animation_clear_slots(void) {
         slots[i].clip_x_enabled = false;
         slots[i].crop_y_enabled = false;
         slots[i].crop_x_enabled = false;
+        slots[i].fx             = 0.0f;
+        slots[i].fy             = 0.0f;
+        slots[i].has_target     = false;
+        slots[i].velocity       = 0.0f;
     }
+    move_ticks_init = false;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(animation_clear_slots_obj, animation_clear_slots);
@@ -125,6 +163,11 @@ static mp_obj_t animation_set_slot(size_t n_args, const mp_obj_t *args) {
     slots[idx].opacity        = 255;
     slots[idx].clip_y_enabled = false;
     slots[idx].clip_x_enabled = false;
+    // Sync float position and cancel any in-flight movement
+    slots[idx].fx             = (float)slots[idx].x;
+    slots[idx].fy             = (float)slots[idx].y;
+    slots[idx].has_target     = false;
+    slots[idx].velocity       = 0.0f;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_obj, 6, 6, animation_set_slot);
@@ -140,6 +183,9 @@ static mp_obj_t animation_update_slot(size_t n_args, const mp_obj_t *args) {
     slots[idx].buf = (uint8_t *)info.buf;
     slots[idx].x   = (int16_t)mp_obj_get_int(args[2]);
     slots[idx].y   = (int16_t)mp_obj_get_int(args[3]);
+    // Sync float position
+    slots[idx].fx  = (float)slots[idx].x;
+    slots[idx].fy  = (float)slots[idx].y;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_update_slot_obj, 4, 4, animation_update_slot);
@@ -150,8 +196,12 @@ static mp_obj_t animation_update_slot_pos(size_t n_args, const mp_obj_t *args) {
     int idx = mp_obj_get_int(args[0]);
     if (idx < 0 || idx >= MAX_SLOTS)
         mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
-    slots[idx].x = (int16_t)mp_obj_get_int(args[1]);
-    slots[idx].y = (int16_t)mp_obj_get_int(args[2]);
+    slots[idx].x  = (int16_t)mp_obj_get_int(args[1]);
+    slots[idx].y  = (int16_t)mp_obj_get_int(args[2]);
+    // Sync float position and cancel any in-flight movement
+    slots[idx].fx = (float)slots[idx].x;
+    slots[idx].fy = (float)slots[idx].y;
+    slots[idx].has_target = false;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_update_slot_pos_obj, 3, 3, animation_update_slot_pos);
@@ -234,11 +284,11 @@ static mp_obj_t animation_set_slot_crop(size_t n_args, const mp_obj_t *args) {
     if (idx < 0 || idx >= MAX_SLOTS)
         mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
 
-    int16_t     x0     = (int16_t)mp_obj_get_int(args[1]);
-    int16_t     x1     = (int16_t)mp_obj_get_int(args[2]);
+    int16_t     x0      = (int16_t)mp_obj_get_int(args[1]);
+    int16_t     x1      = (int16_t)mp_obj_get_int(args[2]);
     const char *cx_mode = mp_obj_str_get_str(args[3]);
-    int16_t     y0     = (int16_t)mp_obj_get_int(args[4]);
-    int16_t     y1     = (int16_t)mp_obj_get_int(args[5]);
+    int16_t     y0      = (int16_t)mp_obj_get_int(args[4]);
+    int16_t     y1      = (int16_t)mp_obj_get_int(args[5]);
     const char *cy_mode = mp_obj_str_get_str(args[6]);
 
     slots[idx].crop_x0        = x0;
@@ -254,6 +304,122 @@ static mp_obj_t animation_set_slot_crop(size_t n_args, const mp_obj_t *args) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_crop_obj, 7, 7, animation_set_slot_crop);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Movement system ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── set_slot_target ─────────────────────────────────────────────────────────
+// set_slot_target(index, target_x, target_y, velocity)
+//
+// Starts (or redirects) movement of slot `index` toward (target_x, target_y)
+// at `velocity` pixels per second in a straight line. Can be called at any
+// time — movement always resumes from the current float position, so direction
+// and speed changes are immediate. velocity must be > 0.
+//
+// Call update_movement() each frame to advance all moving slots.
+
+static mp_obj_t animation_set_slot_target(size_t n_args, const mp_obj_t *args) {
+    int idx = mp_obj_get_int(args[0]);
+    if (idx < 0 || idx >= MAX_SLOTS)
+        mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
+
+    float tx  = (float)mp_obj_get_float(args[1]);
+    float ty  = (float)mp_obj_get_float(args[2]);
+    float vel = (float)mp_obj_get_float(args[3]);
+
+    if (vel <= 0.0f)
+        mp_raise_ValueError(MP_ERROR_TEXT("velocity must be > 0"));
+
+    // Always start from the current float position so mid-flight redirects
+    // work correctly. fx/fy are kept in sync by set_slot / update_slot_pos /
+    // update_slot, and by update_movement itself each frame.
+    sprite_slot_t *s = &slots[idx];
+    s->target_x  = tx;
+    s->target_y  = ty;
+    s->velocity  = vel;
+    s->has_target = true;
+
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_target_obj, 4, 4, animation_set_slot_target);
+
+// ─── clear_slot_target ───────────────────────────────────────────────────────
+// clear_slot_target(index)
+// Cancels any in-flight movement for the slot. The slot stays at its current
+// position (no snap). Subsequent update_movement() calls will not touch it.
+
+static mp_obj_t animation_clear_slot_target(mp_obj_t idx_in) {
+    int idx = mp_obj_get_int(idx_in);
+    if (idx < 0 || idx >= MAX_SLOTS)
+        mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
+    slots[idx].has_target = false;
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(animation_clear_slot_target_obj, animation_clear_slot_target);
+
+// ─── update_movement ─────────────────────────────────────────────────────────
+// update_movement()
+//
+// Advances every slot that has a target. Uses internal ticks_ms for delta
+// time so you don't need to pass anything — just call it once per frame,
+// ideally right before draw_all().
+//
+// Movement is straight-line at a fixed pixels/sec speed:
+//   direction_vector = normalise(target - current_pos)
+//   new_pos = current_pos + direction_vector * velocity * dt
+//
+// When the remaining distance is less than one frame's step the slot snaps
+// to the target exactly and has_target is cleared.
+
+static mp_obj_t animation_update_movement(void) {
+    uint32_t now = mp_hal_ticks_ms();
+
+    if (!move_ticks_init) {
+        last_move_ticks = now;
+        move_ticks_init = true;
+        return mp_const_none;   // first call — nothing to advance yet
+    }
+
+    // Cap dt at 100 ms to prevent huge jumps after pauses / debug breaks
+    uint32_t elapsed = now - last_move_ticks;
+    if (elapsed > 100) elapsed = 100;
+    float dt = (float)elapsed / 1000.0f;
+    last_move_ticks = now;
+
+    if (dt <= 0.0f) return mp_const_none;
+
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        sprite_slot_t *s = &slots[i];
+        if (!s->has_target) continue;
+
+        float dx   = s->target_x - s->fx;
+        float dy   = s->target_y - s->fy;
+        float dist = sqrtf(dx * dx + dy * dy);
+
+        float step = s->velocity * dt;
+
+        if (step >= dist) {
+            // Reached (or would overshoot) the target — snap and stop
+            s->fx         = s->target_x;
+            s->fy         = s->target_y;
+            s->has_target = false;
+        } else {
+            // Normalise direction and advance
+            float inv  = step / dist;   // = step * (1/dist), avoids a divide
+            s->fx += dx * inv;
+            s->fy += dy * inv;
+        }
+
+        // Snap float position to integer for rendering
+        s->x = (int16_t)s->fx;
+        s->y = (int16_t)s->fy;
+    }
+
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(animation_update_movement_obj, animation_update_movement);
+
 // ─── Internal blit ───────────────────────────────────────────────────────────
 
 static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
@@ -480,8 +646,16 @@ static mp_obj_t animation_scroll(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_scroll_obj, 3, 4, animation_scroll);
 
 // ─── write (proportional bitmap font) ────────────────────────────────────────
-// write(font, text, x, y, fg, display_buf {, bg=-1})
-// bg = -1 means transparent background (default)
+// write(font, text, x, y, fg, display_buf {, bg=-1 {, slot=TEXT_SLOT}})
+//
+// When slot >= 0 and slots[slot].buf is set, drawing goes into that slot's
+// buffer and display_buf is ignored (pass None if you like).
+// When slot < 0, drawing goes directly into display_buf (legacy behaviour).
+//
+// Default slot is TEXT_SLOT (16) so text always composites on top of everything
+// in draw_all(). Set slot=-1 to revert to writing directly to display_buf.
+//
+// bg = -1 means transparent background.
 
 static uint32_t _bs_bit    = 0;
 static uint8_t *_bmap_data = NULL;
@@ -497,7 +671,7 @@ static uint8_t _get_color(uint8_t bpp) {
 }
 
 static mp_obj_t animation_write(size_t n_args, const mp_obj_t *args) {
-    // write(font, text, x, y, fg, display_buf {, bg=-1})
+    // write(font, text, x, y, fg, display_buf {, bg=-1 {, slot=TEXT_SLOT}})
     mp_obj_module_t *font = MP_OBJ_TO_PTR(args[0]);
 
     const char *text;
@@ -512,12 +686,20 @@ static mp_obj_t animation_write(size_t n_args, const mp_obj_t *args) {
     int  x  = mp_obj_get_int(args[2]);
     int  y  = mp_obj_get_int(args[3]);
     int  fg = mp_obj_get_int(args[4]);
-    int  bg = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
+    int  bg   = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
+    int  slot = (n_args > 7) ? mp_obj_get_int(args[7]) : TEXT_SLOT;
     bool transparent_bg = (bg == -1);
 
-    mp_buffer_info_t buf_info;
-    mp_get_buffer_raise(args[5], &buf_info, MP_BUFFER_WRITE);
-    uint16_t *dst = (uint16_t *)buf_info.buf;
+    // Resolve destination buffer: prefer slot buffer when available
+    uint16_t *dst;
+    if (slot >= 0 && slot < MAX_SLOTS && slots[slot].buf != NULL) {
+        dst = (uint16_t *)slots[slot].buf;
+    } else {
+        // Fall back to the explicit display_buf argument
+        mp_buffer_info_t buf_info;
+        mp_get_buffer_raise(args[5], &buf_info, MP_BUFFER_WRITE);
+        dst = (uint16_t *)buf_info.buf;
+    }
 
     mp_obj_dict_t *dict = MP_OBJ_TO_PTR(font->globals);
 
@@ -611,11 +793,13 @@ static mp_obj_t animation_write(size_t n_args, const mp_obj_t *args) {
     }
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_write_obj, 6, 7, animation_write);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_write_obj, 6, 8, animation_write);
 
 // ─── text (fixed-width bitmap font) ──────────────────────────────────────────
-// text(font, text, x, y, fg, display_buf {, bg=-1})
-// Font format: WIDTH, HEIGHT, FIRST, LAST, FONT keys (fixed-width bitmaps)
+// text(font, text, x, y, fg, display_buf {, bg=-1 {, slot=TEXT_SLOT}})
+//
+// Same slot routing as write() above — see that function for full details.
+// Font format: WIDTH, HEIGHT, FIRST, LAST, FONT keys (fixed-width bitmaps).
 
 static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
     mp_obj_module_t *font = MP_OBJ_TO_PTR(args[0]);
@@ -633,15 +817,23 @@ static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
         source_len  = strlen((const char *)source);
     }
 
-    int  x  = mp_obj_get_int(args[2]);
-    int  y  = mp_obj_get_int(args[3]);
-    int  fg = mp_obj_get_int(args[4]);
-    int  bg = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
+    int  x    = mp_obj_get_int(args[2]);
+    int  y    = mp_obj_get_int(args[3]);
+    int  fg   = mp_obj_get_int(args[4]);
+    int  bg   = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
+    int  slot = (n_args > 7) ? mp_obj_get_int(args[7]) : TEXT_SLOT;
     bool transparent_bg = (bg == -1);
 
-    mp_buffer_info_t buf_info;
-    mp_get_buffer_raise(args[5], &buf_info, MP_BUFFER_WRITE);
-    uint16_t *dst = (uint16_t *)buf_info.buf;
+    // Resolve destination buffer: prefer slot buffer when available
+    uint16_t *dst;
+    if (slot >= 0 && slot < MAX_SLOTS && slots[slot].buf != NULL) {
+        dst = (uint16_t *)slots[slot].buf;
+    } else {
+        // Fall back to the explicit display_buf argument
+        mp_buffer_info_t buf_info;
+        mp_get_buffer_raise(args[5], &buf_info, MP_BUFFER_WRITE);
+        dst = (uint16_t *)buf_info.buf;
+    }
 
     mp_obj_dict_t *dict  = MP_OBJ_TO_PTR(font->globals);
     const uint8_t  fw    = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_WIDTH)));
@@ -686,7 +878,7 @@ static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
     }
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_text_obj, 6, 7, animation_text);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_text_obj, 6, 8, animation_text);
 
 // ─── recolor_slot ────────────────────────────────────────────────────────────
 // recolor_slot(index, color)
@@ -739,6 +931,10 @@ static const mp_rom_map_elem_t animation_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_fill_background),     MP_ROM_PTR(&animation_fill_background_obj)     },
     { MP_ROM_QSTR(MP_QSTR_flip_buf_horizontal), MP_ROM_PTR(&animation_flip_buf_horizontal_obj) },
     { MP_ROM_QSTR(MP_QSTR_flip_buf_vertical),   MP_ROM_PTR(&animation_flip_buf_vertical_obj)   },
+    // Movement
+    { MP_ROM_QSTR(MP_QSTR_set_slot_target),     MP_ROM_PTR(&animation_set_slot_target_obj)     },
+    { MP_ROM_QSTR(MP_QSTR_clear_slot_target),   MP_ROM_PTR(&animation_clear_slot_target_obj)   },
+    { MP_ROM_QSTR(MP_QSTR_update_movement),     MP_ROM_PTR(&animation_update_movement_obj)     },
     // Drawing
     { MP_ROM_QSTR(MP_QSTR_fill_rect),           MP_ROM_PTR(&animation_fill_rect_obj)           },
     { MP_ROM_QSTR(MP_QSTR_scroll),              MP_ROM_PTR(&animation_scroll_obj)              },
