@@ -23,13 +23,19 @@
 /*
  * animation.c — Sprite compositing and drawing for MicroPython on ESP32-S3.
  *
- * Pipeline: fill_background → draw_all → tft.blit_buffer
+ * Pipeline: fill_background → update slots → draw_all → tft.blit_buffer
  *
  * All drawing targets a Python bytearray (display_buf) that you manage.
  * Hardware init/blit lives in esp_lcd.c (ESPLCD).
  *
- * Slot 16 (MAX_SLOTS-1) is the reserved top-layer text overlay. Set it up
- * with set_slot(16, buf, 0, 0, w, h) and write()/text() will default to it.
+ * Text and rect rendering:
+ *   write(), text(), and fill_rect() enqueue draw commands instead of drawing
+ *   immediately. draw_all() flushes both queues after all slots are composited:
+ *   rects first, then text on top. Both are therefore always above all slots
+ *   regardless of call order. Queues are reset automatically by draw_all().
+ *
+ *   The slot and display_buf arguments to write()/text() are accepted for
+ *   API compatibility but ignored — routing is always through the queue.
  *
  * Movement:
  *   set_slot_target(idx, tx, ty, vel)  — start moving toward (tx,ty) at
@@ -59,11 +65,11 @@
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// Slots 0-15 are general-purpose sprites.
-// Slot 16 is the reserved top-layer text overlay (written last by draw_all).
-#define MAX_SLOTS    17
-#define TEXT_SLOT    16        // default target for write() / text()
-#define MAGIC_COLOR  58572     // RGB565 transparency key: RGB(231,154,99)
+#define MAX_SLOTS       17
+#define TEXT_SLOT       16         // kept for API compat; ignored by write/text
+#define MAGIC_COLOR     58572      // RGB565 transparency key: RGB(231,154,99)
+#define TEXT_QUEUE_MAX  8          // max write()/text() calls per frame
+#define RECT_QUEUE_MAX  8          // max fill_rect() calls per frame
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Slot system ──────────────────────────────────────────────────────────────
@@ -76,35 +82,28 @@ typedef struct {
     uint8_t   opacity;         // 0 = invisible, 255 = fully opaque (default)
 
     // ── Sub-pixel position & movement ────────────────────────────────────────
-    // fx/fy track the true float position; x/y are snapped for rendering.
-    // set_slot / update_slot_pos keep fx/fy in sync when you move a slot
-    // directly so that subsequent set_slot_target() starts from the right place.
     float     fx, fy;
     float     target_x, target_y;
-    float     velocity;        // pixels per second; 0 = not moving
-    bool      has_target;      // true while a movement is in progress
+    float     velocity;
+    bool      has_target;
 
     // Vertical clip (single edge)
     int16_t   clip_y;
     bool      clip_y_enabled;
-    bool      clip_y_after;   // true = hide y >= clip_y  ("after")
-                               // false = hide y <  clip_y  ("before")
+    bool      clip_y_after;
     // Horizontal clip (single edge)
     int16_t   clip_x;
     bool      clip_x_enabled;
-    bool      clip_x_after;   // true = hide x >= clip_x  ("after")
-                               // false = hide x <  clip_x  ("before")
+    bool      clip_x_after;
 
     // Vertical crop (range)
     int16_t   crop_y0, crop_y1;
     bool      crop_y_enabled;
-    bool      crop_y_between; // true = hide y in  [y0, y1]  ("between")
-                               // false = hide y out [y0, y1]  ("outside")
+    bool      crop_y_between;
     // Horizontal crop (range)
     int16_t   crop_x0, crop_x1;
     bool      crop_x_enabled;
-    bool      crop_x_between; // true = hide x in  [x0, x1]  ("between")
-                               // false = hide x out [x0, x1]  ("outside")
+    bool      crop_x_between;
 } sprite_slot_t;
 
 static sprite_slot_t slots[MAX_SLOTS];
@@ -115,6 +114,58 @@ static int16_t display_h = 240;
 
 static uint32_t last_move_ticks = 0;
 static bool     move_ticks_init  = false;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Text command queue ───────────────────────────────────════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// write() and text() enqueue here instead of drawing immediately.
+// draw_all() flushes the queue after all slots are composited so text is
+// always rendered on top, regardless of when write()/text() was called.
+
+#define TEXT_CMD_WRITE 0
+#define TEXT_CMD_TEXT  1
+
+typedef struct {
+    uint8_t   kind;          // TEXT_CMD_WRITE or TEXT_CMD_TEXT
+    mp_obj_t  font_obj;
+    char      buf[64];       // local copy of the string (avoids GC lifetime issues)
+    int       x, y;
+    uint16_t  fg, bg;
+    bool      transparent_bg;
+} text_cmd_t;
+
+static text_cmd_t text_queue[TEXT_QUEUE_MAX];
+static int        text_queue_len = 0;
+
+// ─── Rect command queue ───────────────────────────────────────────────────────
+//
+// fill_rect() enqueues here. Flushed by draw_all() after slots but before
+// text, so rects sit above sprites and below text.
+
+typedef struct {
+    int     x, y, w, h;
+    uint8_t hi, lo;
+} rect_cmd_t;
+
+static rect_cmd_t rect_queue[RECT_QUEUE_MAX];
+static int        rect_queue_len = 0;
+
+static void _enqueue_text(uint8_t kind, mp_obj_t font_obj,
+                           const char *str, int x, int y,
+                           uint16_t fg, uint16_t bg, bool transparent_bg) {
+    if (text_queue_len >= TEXT_QUEUE_MAX) return;  // silently drop if full
+    text_cmd_t *cmd  = &text_queue[text_queue_len++];
+    cmd->kind        = kind;
+    cmd->font_obj    = font_obj;
+    cmd->x           = x;
+    cmd->y           = y;
+    cmd->fg          = fg;
+    cmd->bg          = bg;
+    cmd->transparent_bg = transparent_bg;
+    strncpy(cmd->buf, str, sizeof(cmd->buf) - 1);
+    cmd->buf[sizeof(cmd->buf) - 1] = '\0';
+}
 
 // ─── set_display_size ────────────────────────────────────────────────────────
 
@@ -142,6 +193,8 @@ static mp_obj_t animation_clear_slots(void) {
         slots[i].velocity       = 0.0f;
     }
     move_ticks_init = false;
+    text_queue_len  = 0;
+    rect_queue_len  = 0;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(animation_clear_slots_obj, animation_clear_slots);
@@ -163,7 +216,6 @@ static mp_obj_t animation_set_slot(size_t n_args, const mp_obj_t *args) {
     slots[idx].opacity        = 255;
     slots[idx].clip_y_enabled = false;
     slots[idx].clip_x_enabled = false;
-    // Sync float position and cancel any in-flight movement
     slots[idx].fx             = (float)slots[idx].x;
     slots[idx].fy             = (float)slots[idx].y;
     slots[idx].has_target     = false;
@@ -183,7 +235,6 @@ static mp_obj_t animation_update_slot(size_t n_args, const mp_obj_t *args) {
     slots[idx].buf = (uint8_t *)info.buf;
     slots[idx].x   = (int16_t)mp_obj_get_int(args[2]);
     slots[idx].y   = (int16_t)mp_obj_get_int(args[3]);
-    // Sync float position
     slots[idx].fx  = (float)slots[idx].x;
     slots[idx].fy  = (float)slots[idx].y;
     return mp_const_none;
@@ -198,7 +249,6 @@ static mp_obj_t animation_update_slot_pos(size_t n_args, const mp_obj_t *args) {
         mp_raise_ValueError(MP_ERROR_TEXT("slot index out of range"));
     slots[idx].x  = (int16_t)mp_obj_get_int(args[1]);
     slots[idx].y  = (int16_t)mp_obj_get_int(args[2]);
-    // Sync float position and cancel any in-flight movement
     slots[idx].fx = (float)slots[idx].x;
     slots[idx].fy = (float)slots[idx].y;
     slots[idx].has_target = false;
@@ -231,7 +281,6 @@ static mp_obj_t animation_enable_slot(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_enable_slot_obj, 2, 2, animation_enable_slot);
 
 // ─── set_slot_opacity ────────────────────────────────────────────────────────
-// set_slot_opacity(index, opacity)  opacity: 0 = invisible, 255 = fully opaque
 
 static mp_obj_t animation_set_slot_opacity(mp_obj_t idx_in, mp_obj_t opacity_in) {
     int idx = mp_obj_get_int(idx_in);
@@ -246,10 +295,6 @@ static mp_obj_t animation_set_slot_opacity(mp_obj_t idx_in, mp_obj_t opacity_in)
 static MP_DEFINE_CONST_FUN_OBJ_2(animation_set_slot_opacity_obj, animation_set_slot_opacity);
 
 // ─── set_slot_clip ───────────────────────────────────────────────────────────
-// set_slot_clip(index, clip_x, clip_x_dir, clip_y, clip_y_dir)
-// clip_x / clip_y: pixel coordinate cutoff; 0 = disabled
-// dir: "after"  → hide pixels AT or past the cutoff (>= cutoff)
-//      "before" → hide pixels before the cutoff    (<  cutoff)
 
 static mp_obj_t animation_set_slot_clip(size_t n_args, const mp_obj_t *args) {
     int idx = mp_obj_get_int(args[0]);
@@ -263,7 +308,7 @@ static mp_obj_t animation_set_slot_clip(size_t n_args, const mp_obj_t *args) {
 
     slots[idx].clip_x         = clip_x;
     slots[idx].clip_x_enabled = (clip_x != 0);
-    slots[idx].clip_x_after   = (cx_dir[0] == 'a');  // 'a'fter vs 'b'efore
+    slots[idx].clip_x_after   = (cx_dir[0] == 'a');
 
     slots[idx].clip_y         = clip_y;
     slots[idx].clip_y_enabled = (clip_y != 0);
@@ -274,10 +319,6 @@ static mp_obj_t animation_set_slot_clip(size_t n_args, const mp_obj_t *args) {
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_clip_obj, 5, 5, animation_set_slot_clip);
 
 // ─── set_slot_crop ────────────────────────────────────────────────────────────
-// set_slot_crop(index, x0, x1, crop_x_mode, y0, y1, crop_y_mode)
-// x0/x1, y0/y1 : pixel range (inclusive on both ends); 0,0 = axis disabled
-// mode : "between" → hide pixels WITHIN  [n0, n1]
-//        "outside" → hide pixels OUTSIDE [n0, n1]  (i.e. keep only the window)
 
 static mp_obj_t animation_set_slot_crop(size_t n_args, const mp_obj_t *args) {
     int idx = mp_obj_get_int(args[0]);
@@ -294,7 +335,7 @@ static mp_obj_t animation_set_slot_crop(size_t n_args, const mp_obj_t *args) {
     slots[idx].crop_x0        = x0;
     slots[idx].crop_x1        = x1;
     slots[idx].crop_x_enabled = (x0 != 0 || x1 != 0);
-    slots[idx].crop_x_between = (cx_mode[0] == 'b'); // 'b'etween vs 'o'utside
+    slots[idx].crop_x_between = (cx_mode[0] == 'b');
 
     slots[idx].crop_y0        = y0;
     slots[idx].crop_y1        = y1;
@@ -309,16 +350,6 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_crop_obj, 7, 7, an
 // ─── Movement system ──────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─── set_slot_target ─────────────────────────────────────────────────────────
-// set_slot_target(index, target_x, target_y, velocity)
-//
-// Starts (or redirects) movement of slot `index` toward (target_x, target_y)
-// at `velocity` pixels per second in a straight line. Can be called at any
-// time — movement always resumes from the current float position, so direction
-// and speed changes are immediate. velocity must be > 0.
-//
-// Call update_movement() each frame to advance all moving slots.
-
 static mp_obj_t animation_set_slot_target(size_t n_args, const mp_obj_t *args) {
     int idx = mp_obj_get_int(args[0]);
     if (idx < 0 || idx >= MAX_SLOTS)
@@ -331,9 +362,6 @@ static mp_obj_t animation_set_slot_target(size_t n_args, const mp_obj_t *args) {
     if (vel <= 0.0f)
         mp_raise_ValueError(MP_ERROR_TEXT("velocity must be > 0"));
 
-    // Always start from the current float position so mid-flight redirects
-    // work correctly. fx/fy are kept in sync by set_slot / update_slot_pos /
-    // update_slot, and by update_movement itself each frame.
     sprite_slot_t *s = &slots[idx];
     s->target_x  = tx;
     s->target_y  = ty;
@@ -344,11 +372,6 @@ static mp_obj_t animation_set_slot_target(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_set_slot_target_obj, 4, 4, animation_set_slot_target);
 
-// ─── clear_slot_target ───────────────────────────────────────────────────────
-// clear_slot_target(index)
-// Cancels any in-flight movement for the slot. The slot stays at its current
-// position (no snap). Subsequent update_movement() calls will not touch it.
-
 static mp_obj_t animation_clear_slot_target(mp_obj_t idx_in) {
     int idx = mp_obj_get_int(idx_in);
     if (idx < 0 || idx >= MAX_SLOTS)
@@ -358,30 +381,15 @@ static mp_obj_t animation_clear_slot_target(mp_obj_t idx_in) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(animation_clear_slot_target_obj, animation_clear_slot_target);
 
-// ─── update_movement ─────────────────────────────────────────────────────────
-// update_movement()
-//
-// Advances every slot that has a target. Uses internal ticks_ms for delta
-// time so you don't need to pass anything — just call it once per frame,
-// ideally right before draw_all().
-//
-// Movement is straight-line at a fixed pixels/sec speed:
-//   direction_vector = normalise(target - current_pos)
-//   new_pos = current_pos + direction_vector * velocity * dt
-//
-// When the remaining distance is less than one frame's step the slot snaps
-// to the target exactly and has_target is cleared.
-
 static mp_obj_t animation_update_movement(void) {
     uint32_t now = mp_hal_ticks_ms();
 
     if (!move_ticks_init) {
         last_move_ticks = now;
         move_ticks_init = true;
-        return mp_const_none;   // first call — nothing to advance yet
+        return mp_const_none;
     }
 
-    // Cap dt at 100 ms to prevent huge jumps after pauses / debug breaks
     uint32_t elapsed = now - last_move_ticks;
     if (elapsed > 100) elapsed = 100;
     float dt = (float)elapsed / 1000.0f;
@@ -396,22 +404,18 @@ static mp_obj_t animation_update_movement(void) {
         float dx   = s->target_x - s->fx;
         float dy   = s->target_y - s->fy;
         float dist = sqrtf(dx * dx + dy * dy);
-
         float step = s->velocity * dt;
 
         if (step >= dist) {
-            // Reached (or would overshoot) the target — snap and stop
             s->fx         = s->target_x;
             s->fy         = s->target_y;
             s->has_target = false;
         } else {
-            // Normalise direction and advance
-            float inv  = step / dist;   // = step * (1/dist), avoids a divide
+            float inv = step / dist;
             s->fx += dx * inv;
             s->fy += dy * inv;
         }
 
-        // Snap float position to integer for rendering
         s->x = (int16_t)s->fx;
         s->y = (int16_t)s->fy;
     }
@@ -466,12 +470,9 @@ static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
             int di = dst_row_base + target_col * 2;
 
             if (opacity == 255) {
-                // Fast path — fully opaque, direct copy
                 dst[di]     = src[si];
                 dst[di + 1] = src[si + 1];
             } else if (opacity > 0) {
-                // Blend path — unpack RGB565, lerp, repack
-                // Note: lsb_first display — bytes are stored swapped
                 uint16_t s16 = (src[si] << 8) | src[si + 1];
                 uint16_t d16 = (dst[di] << 8) | dst[di + 1];
 
@@ -494,21 +495,192 @@ static void blit_slot(sprite_slot_t *slot, uint8_t *dst) {
                 dst[di]     = (uint8_t)(out >> 8);
                 dst[di + 1] = (uint8_t)(out & 0xFF);
             }
-            // opacity == 0: skip pixel entirely
+        }
+    }
+}
+
+// ─── Internal text flush helpers ─────────────────────────────────────────────
+
+static uint32_t _bs_bit    = 0;
+static uint8_t *_bmap_data = NULL;
+
+static uint8_t _get_color(uint8_t bpp) {
+    uint8_t color = 0;
+    for (int i = 0; i < bpp; i++) {
+        color <<= 1;
+        color |= (_bmap_data[_bs_bit / 8] & (1 << (7 - (_bs_bit % 8)))) > 0;
+        _bs_bit++;
+    }
+    return color;
+}
+
+static void _flush_write_cmd(text_cmd_t *cmd, uint16_t *dst) {
+    mp_obj_module_t *font = MP_OBJ_TO_PTR(cmd->font_obj);
+    mp_obj_dict_t   *dict = MP_OBJ_TO_PTR(font->globals);
+
+    const uint8_t bpp = mp_obj_get_int(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_BPP)));
+    const uint8_t height = mp_obj_get_int(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_HEIGHT)));
+    const uint8_t offset_width = mp_obj_get_int(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_OFFSET_WIDTH)));
+
+    mp_buffer_info_t widths_info, offsets_info, bitmaps_info;
+    mp_get_buffer_raise(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_WIDTHS)),
+        &widths_info, MP_BUFFER_READ);
+    mp_get_buffer_raise(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_OFFSETS)),
+        &offsets_info, MP_BUFFER_READ);
+    mp_get_buffer_raise(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_BITMAPS)),
+        &bitmaps_info, MP_BUFFER_READ);
+
+    const uint8_t *widths  = widths_info.buf;
+    const uint8_t *offsets = offsets_info.buf;
+    _bmap_data              = bitmaps_info.buf;
+
+    mp_obj_t map_obj = mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_MAP));
+    GET_STR_DATA_LEN(map_obj, map_data, map_len);
+
+    const uint8_t *str     = (const uint8_t *)cmd->buf;
+    const uint8_t *str_top = str + strlen(cmd->buf);
+
+    int cursor_x = cmd->x;
+
+    while (str < str_top) {
+        unichar ch = utf8_get_char(str);
+        str = utf8_next_char(str);
+
+        const byte *map_s   = map_data;
+        const byte *map_top = map_data + map_len;
+        uint16_t    char_index = 0;
+
+        while (map_s < map_top) {
+            unichar map_ch = utf8_get_char(map_s);
+            map_s = utf8_next_char(map_s);
+
+            if (ch == map_ch) {
+                uint8_t char_w = widths[char_index];
+
+                _bs_bit = 0;
+                switch (offset_width) {
+                    case 1:
+                        _bs_bit = offsets[char_index];
+                        break;
+                    case 2:
+                        _bs_bit = ((uint32_t)offsets[char_index * 2]     << 8) |
+                                              offsets[char_index * 2 + 1];
+                        break;
+                    case 3:
+                        _bs_bit = ((uint32_t)offsets[char_index * 3]     << 16) |
+                                  ((uint32_t)offsets[char_index * 3 + 1] <<  8) |
+                                             offsets[char_index * 3 + 2];
+                        break;
+                }
+
+                for (int row = 0; row < height; row++) {
+                    int py = cmd->y + row;
+                    if (py < 0 || py >= display_h) {
+                        for (int col = 0; col < char_w; col++) _get_color(bpp);
+                        continue;
+                    }
+                    for (int col = 0; col < char_w; col++) {
+                        uint8_t pixel = _get_color(bpp);
+                        int px = cursor_x + col;
+                        if (px < 0 || px >= display_w) continue;
+                        int idx = py * display_w + px;
+                        if (pixel) {
+                            dst[idx] = cmd->fg;
+                        } else if (!cmd->transparent_bg) {
+                            dst[idx] = cmd->bg;
+                        }
+                    }
+                }
+                cursor_x += char_w;
+                break;
+            }
+            char_index++;
+        }
+    }
+}
+
+static void _flush_text_cmd(text_cmd_t *cmd, uint16_t *dst) {
+    mp_obj_module_t *font = MP_OBJ_TO_PTR(cmd->font_obj);
+    mp_obj_dict_t   *dict = MP_OBJ_TO_PTR(font->globals);
+
+    const uint8_t fw    = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_WIDTH)));
+    const uint8_t fh    = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_HEIGHT)));
+    const uint8_t first = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_FIRST)));
+    const uint8_t last  = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_LAST)));
+
+    mp_buffer_info_t font_info;
+    mp_get_buffer_raise(
+        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_FONT)),
+        &font_info, MP_BUFFER_READ);
+    const uint8_t *font_data = font_info.buf;
+
+    uint8_t  wide     = fw / 8;
+    int      cursor_x = cmd->x;
+    const uint8_t *s  = (const uint8_t *)cmd->buf;
+
+    while (*s) {
+        uint8_t ch = *s++;
+        if (ch >= first && ch <= last) {
+            uint16_t chr_idx = (ch - first) * (fh * wide);
+            for (uint8_t row = 0; row < fh; row++) {
+                int py = cmd->y + row;
+                if (py < 0 || py >= display_h) continue;
+                for (uint8_t byte_i = 0; byte_i < wide; byte_i++) {
+                    uint8_t chr_byte = font_data[chr_idx + row * wide + byte_i];
+                    for (int bit = 7; bit >= 0; bit--) {
+                        int px = cursor_x + byte_i * 8 + (7 - bit);
+                        if (px < 0 || px >= display_w) continue;
+                        int idx = py * display_w + px;
+                        if ((chr_byte >> bit) & 1) {
+                            dst[idx] = cmd->fg;
+                        } else if (!cmd->transparent_bg) {
+                            dst[idx] = cmd->bg;
+                        }
+                    }
+                }
+            }
+            cursor_x += fw;
         }
     }
 }
 
 // ─── draw_all ────────────────────────────────────────────────────────────────
+// Composites all enabled slots into display_buf in index order, then flushes
+// the text queue on top. Text is always rendered last regardless of when
+// write()/text() was called during the frame.
 
 static mp_obj_t animation_draw_all(mp_obj_t display_buf_in) {
     mp_buffer_info_t info;
     mp_get_buffer_raise(display_buf_in, &info, MP_BUFFER_WRITE);
-    uint8_t *dst = (uint8_t *)info.buf;
+    uint8_t  *dst   = (uint8_t  *)info.buf;
+    uint16_t *dst16 = (uint16_t *)info.buf;
+
     for (int i = 0; i < MAX_SLOTS; i++) {
         if (!slots[i].enabled || slots[i].buf == NULL) continue;
         blit_slot(&slots[i], dst);
     }
+
+    // Flush rect queue — above slots, below text
+    for (int q = 0; q < rect_queue_len; q++)
+        _flush_rect(&rect_queue[q], dst);
+    rect_queue_len = 0;
+
+    // Flush text queue — always on top of everything
+    for (int q = 0; q < text_queue_len; q++) {
+        text_cmd_t *cmd = &text_queue[q];
+        if (cmd->kind == TEXT_CMD_WRITE)
+            _flush_write_cmd(cmd, dst16);
+        else
+            _flush_text_cmd(cmd, dst16);
+    }
+    text_queue_len = 0;
+
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_1(animation_draw_all_obj, animation_draw_all);
@@ -572,43 +744,41 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_flip_buf_vertical_obj, 4, 4
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── fill_rect ───────────────────────────────────────────────────────────────
-// fill_rect(display_buf, x, y, w, h, color)
 
-static mp_obj_t animation_fill_rect(size_t n_args, const mp_obj_t *args) {
-    mp_buffer_info_t info;
-    mp_get_buffer_raise(args[0], &info, MP_BUFFER_WRITE);
-    uint8_t *buf = (uint8_t *)info.buf;
-
-    int x     = mp_obj_get_int(args[1]);
-    int y     = mp_obj_get_int(args[2]);
-    int w     = mp_obj_get_int(args[3]);
-    int h     = mp_obj_get_int(args[4]);
-    int color = mp_obj_get_int(args[5]);
-
-    uint8_t hi = (color >> 8) & 0xFF;
-    uint8_t lo =  color       & 0xFF;
-
+static void _flush_rect(rect_cmd_t *r, uint8_t *dst) {
+    int x = r->x, y = r->y, w = r->w, h = r->h;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
     if (x + w > display_w) w = display_w - x;
     if (y + h > display_h) h = display_h - y;
-    if (w <= 0 || h <= 0) return mp_const_none;
-
+    if (w <= 0 || h <= 0) return;
     for (int row = 0; row < h; row++) {
         int base = (y + row) * display_w * 2 + x * 2;
         for (int col = 0; col < w; col++) {
-            buf[base + col * 2]     = hi;
-            buf[base + col * 2 + 1] = lo;
+            dst[base + col * 2]     = r->hi;
+            dst[base + col * 2 + 1] = r->lo;
         }
     }
+}
+
+static mp_obj_t animation_fill_rect(size_t n_args, const mp_obj_t *args) {
+    // display_buf argument (args[0]) accepted for API compatibility but ignored.
+    // The rect is enqueued and flushed by draw_all() above slots, below text.
+    if (rect_queue_len >= RECT_QUEUE_MAX) return mp_const_none;
+
+    int color = mp_obj_get_int(args[5]);
+    rect_cmd_t *r = &rect_queue[rect_queue_len++];
+    r->x  = mp_obj_get_int(args[1]);
+    r->y  = mp_obj_get_int(args[2]);
+    r->w  = mp_obj_get_int(args[3]);
+    r->h  = mp_obj_get_int(args[4]);
+    r->hi = (color >> 8) & 0xFF;
+    r->lo =  color       & 0xFF;
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_fill_rect_obj, 6, 6, animation_fill_rect);
 
 // ─── scroll ──────────────────────────────────────────────────────────────────
-// scroll(display_buf, dx, dy {, fill_color=0})
-// dx > 0 = right,  dx < 0 = left
-// dy > 0 = down,   dy < 0 = up
 
 static mp_obj_t animation_scroll(size_t n_args, const mp_obj_t *args) {
     mp_buffer_info_t info;
@@ -622,7 +792,6 @@ static mp_obj_t animation_scroll(size_t n_args, const mp_obj_t *args) {
     int W = display_w;
     int H = display_h;
 
-    // Iterate in the direction of the scroll to avoid src/dst overlap
     int y_start, y_end, y_step;
     int x_start, x_end, x_step;
 
@@ -648,149 +817,31 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_scroll_obj, 3, 4, animation
 // ─── write (proportional bitmap font) ────────────────────────────────────────
 // write(font, text, x, y, fg, display_buf {, bg=-1 {, slot=TEXT_SLOT}})
 //
-// When slot >= 0 and slots[slot].buf is set, drawing goes into that slot's
-// buffer and display_buf is ignored (pass None if you like).
-// When slot < 0, drawing goes directly into display_buf (legacy behaviour).
-//
-// Default slot is TEXT_SLOT (16) so text always composites on top of everything
-// in draw_all(). Set slot=-1 to revert to writing directly to display_buf.
-//
-// bg = -1 means transparent background.
-
-static uint32_t _bs_bit    = 0;
-static uint8_t *_bmap_data = NULL;
-
-static uint8_t _get_color(uint8_t bpp) {
-    uint8_t color = 0;
-    for (int i = 0; i < bpp; i++) {
-        color <<= 1;
-        color |= (_bmap_data[_bs_bit / 8] & (1 << (7 - (_bs_bit % 8)))) > 0;
-        _bs_bit++;
-    }
-    return color;
-}
+// Enqueues a draw command. display_buf and slot are accepted for API
+// compatibility but ignored — text is always flushed on top by draw_all().
 
 static mp_obj_t animation_write(size_t n_args, const mp_obj_t *args) {
-    // write(font, text, x, y, fg, display_buf {, bg=-1 {, slot=TEXT_SLOT}})
-    mp_obj_module_t *font = MP_OBJ_TO_PTR(args[0]);
+    if (text_queue_len >= TEXT_QUEUE_MAX) return mp_const_none;
 
     const char *text;
     static char single[2] = {0, 0};
     if (mp_obj_is_int(args[1])) {
         single[0] = (char)(mp_obj_get_int(args[1]) & 0xFF);
+        single[1] = 0;
         text = single;
     } else {
         text = mp_obj_str_get_str(args[1]);
     }
 
-    int  x  = mp_obj_get_int(args[2]);
-    int  y  = mp_obj_get_int(args[3]);
-    int  fg = mp_obj_get_int(args[4]);
-    int  bg   = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
-    int  slot = (n_args > 7) ? mp_obj_get_int(args[7]) : TEXT_SLOT;
-    bool transparent_bg = (bg == -1);
+    int     x             = mp_obj_get_int(args[2]);
+    int     y             = mp_obj_get_int(args[3]);
+    int     fg            = mp_obj_get_int(args[4]);
+    int     bg            = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
+    bool    transparent_bg = (bg == -1);
 
-    // Resolve destination buffer: prefer slot buffer when available
-    uint16_t *dst;
-    if (slot >= 0 && slot < MAX_SLOTS && slots[slot].buf != NULL) {
-        dst = (uint16_t *)slots[slot].buf;
-    } else {
-        // Fall back to the explicit display_buf argument
-        mp_buffer_info_t buf_info;
-        mp_get_buffer_raise(args[5], &buf_info, MP_BUFFER_WRITE);
-        dst = (uint16_t *)buf_info.buf;
-    }
+    _enqueue_text(TEXT_CMD_WRITE, args[0], text,
+                  x, y, (uint16_t)fg, (uint16_t)(bg & 0xFFFF), transparent_bg);
 
-    mp_obj_dict_t *dict = MP_OBJ_TO_PTR(font->globals);
-
-    const uint8_t bpp = mp_obj_get_int(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_BPP)));
-    const uint8_t height = mp_obj_get_int(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_HEIGHT)));
-    const uint8_t offset_width = mp_obj_get_int(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_OFFSET_WIDTH)));
-
-    mp_buffer_info_t widths_info, offsets_info, bitmaps_info;
-    mp_get_buffer_raise(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_WIDTHS)),
-        &widths_info, MP_BUFFER_READ);
-    mp_get_buffer_raise(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_OFFSETS)),
-        &offsets_info, MP_BUFFER_READ);
-    mp_get_buffer_raise(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_BITMAPS)),
-        &bitmaps_info, MP_BUFFER_READ);
-
-    const uint8_t *widths  = widths_info.buf;
-    const uint8_t *offsets = offsets_info.buf;
-    _bmap_data              = bitmaps_info.buf;
-
-    mp_obj_t map_obj = mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_MAP));
-    GET_STR_DATA_LEN(map_obj,  map_data, map_len);
-    GET_STR_DATA_LEN(args[1],  str_data, str_len);
-
-    uint16_t fg16 = (uint16_t)fg;
-    uint16_t bg16 = (uint16_t)(bg & 0xFFFF);
-    int cursor_x  = x;
-
-    const byte *s = str_data, *top = str_data + str_len;
-    while (s < top) {
-        unichar ch = utf8_get_char(s);
-        s = utf8_next_char(s);
-
-        const byte *map_s   = map_data;
-        const byte *map_top = map_data + map_len;
-        uint16_t    char_index = 0;
-
-        while (map_s < map_top) {
-            unichar map_ch = utf8_get_char(map_s);
-            map_s = utf8_next_char(map_s);
-
-            if (ch == map_ch) {
-                uint8_t char_w = widths[char_index];
-
-                // Decode bit offset into bitmap data
-                _bs_bit = 0;
-                switch (offset_width) {
-                    case 1:
-                        _bs_bit = offsets[char_index];
-                        break;
-                    case 2:
-                        _bs_bit = ((uint32_t)offsets[char_index * 2]     << 8) |
-                                              offsets[char_index * 2 + 1];
-                        break;
-                    case 3:
-                        _bs_bit = ((uint32_t)offsets[char_index * 3]     << 16) |
-                                  ((uint32_t)offsets[char_index * 3 + 1] <<  8) |
-                                             offsets[char_index * 3 + 2];
-                        break;
-                }
-
-                for (int row = 0; row < height; row++) {
-                    int py = y + row;
-                    if (py < 0 || py >= display_h) {
-                        // consume bits for this row even if off-screen
-                        for (int col = 0; col < char_w; col++) _get_color(bpp);
-                        continue;
-                    }
-                    for (int col = 0; col < char_w; col++) {
-                        uint8_t pixel = _get_color(bpp);
-                        int px = cursor_x + col;
-                        if (px < 0 || px >= display_w) continue;
-                        int idx = py * display_w + px;
-                        if (pixel) {
-                            dst[idx] = fg16;
-                        } else if (!transparent_bg) {
-                            dst[idx] = bg16;
-                        }
-                    }
-                }
-                cursor_x += char_w;
-                break;
-            }
-            char_index++;
-        }
-    }
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_write_obj, 6, 8, animation_write);
@@ -798,92 +849,36 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_write_obj, 6, 8, animation_
 // ─── text (fixed-width bitmap font) ──────────────────────────────────────────
 // text(font, text, x, y, fg, display_buf {, bg=-1 {, slot=TEXT_SLOT}})
 //
-// Same slot routing as write() above — see that function for full details.
-// Font format: WIDTH, HEIGHT, FIRST, LAST, FONT keys (fixed-width bitmaps).
+// Enqueues a draw command. display_buf and slot are accepted for API
+// compatibility but ignored — text is always flushed on top by draw_all().
 
 static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
-    mp_obj_module_t *font = MP_OBJ_TO_PTR(args[0]);
+    if (text_queue_len >= TEXT_QUEUE_MAX) return mp_const_none;
 
-    const uint8_t *source;
-    size_t         source_len;
-    uint8_t        single_char;
-
+    const char *text;
+    static char single[2] = {0, 0};
     if (mp_obj_is_int(args[1])) {
-        single_char = (uint8_t)(mp_obj_get_int(args[1]) & 0xFF);
-        source      = &single_char;
-        source_len  = 1;
+        single[0] = (char)(mp_obj_get_int(args[1]) & 0xFF);
+        single[1] = 0;
+        text = single;
     } else {
-        source     = (const uint8_t *)mp_obj_str_get_str(args[1]);
-        source_len  = strlen((const char *)source);
+        text = mp_obj_str_get_str(args[1]);
     }
 
-    int  x    = mp_obj_get_int(args[2]);
-    int  y    = mp_obj_get_int(args[3]);
-    int  fg   = mp_obj_get_int(args[4]);
-    int  bg   = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
-    int  slot = (n_args > 7) ? mp_obj_get_int(args[7]) : TEXT_SLOT;
+    int  x             = mp_obj_get_int(args[2]);
+    int  y             = mp_obj_get_int(args[3]);
+    int  fg            = mp_obj_get_int(args[4]);
+    int  bg            = (n_args > 6) ? mp_obj_get_int(args[6]) : -1;
     bool transparent_bg = (bg == -1);
 
-    // Resolve destination buffer: prefer slot buffer when available
-    uint16_t *dst;
-    if (slot >= 0 && slot < MAX_SLOTS && slots[slot].buf != NULL) {
-        dst = (uint16_t *)slots[slot].buf;
-    } else {
-        // Fall back to the explicit display_buf argument
-        mp_buffer_info_t buf_info;
-        mp_get_buffer_raise(args[5], &buf_info, MP_BUFFER_WRITE);
-        dst = (uint16_t *)buf_info.buf;
-    }
+    _enqueue_text(TEXT_CMD_TEXT, args[0], text,
+                  x, y, (uint16_t)fg, (uint16_t)(bg & 0xFFFF), transparent_bg);
 
-    mp_obj_dict_t *dict  = MP_OBJ_TO_PTR(font->globals);
-    const uint8_t  fw    = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_WIDTH)));
-    const uint8_t  fh    = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_HEIGHT)));
-    const uint8_t  first = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_FIRST)));
-    const uint8_t  last  = mp_obj_get_int(mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_LAST)));
-
-    mp_buffer_info_t font_info;
-    mp_get_buffer_raise(
-        mp_obj_dict_get(dict, MP_OBJ_NEW_QSTR(MP_QSTR_FONT)),
-        &font_info, MP_BUFFER_READ);
-    const uint8_t *font_data = font_info.buf;
-
-    uint16_t fg16  = (uint16_t)fg;
-    uint16_t bg16  = (uint16_t)(bg & 0xFFFF);
-    uint8_t  wide  = fw / 8;
-    int      cursor_x = x;
-
-    while (source_len--) {
-        uint8_t ch = *source++;
-        if (ch >= first && ch <= last) {
-            uint16_t chr_idx = (ch - first) * (fh * wide);
-            for (uint8_t row = 0; row < fh; row++) {
-                int py = y + row;
-                if (py < 0 || py >= display_h) continue;
-                for (uint8_t byte_i = 0; byte_i < wide; byte_i++) {
-                    uint8_t chr_byte = font_data[chr_idx + row * wide + byte_i];
-                    for (int bit = 7; bit >= 0; bit--) {
-                        int px = cursor_x + byte_i * 8 + (7 - bit);
-                        if (px < 0 || px >= display_w) continue;
-                        int idx = py * display_w + px;
-                        if ((chr_byte >> bit) & 1) {
-                            dst[idx] = fg16;
-                        } else if (!transparent_bg) {
-                            dst[idx] = bg16;
-                        }
-                    }
-                }
-            }
-            cursor_x += fw;
-        }
-    }
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_text_obj, 6, 8, animation_text);
 
 // ─── recolor_slot ────────────────────────────────────────────────────────────
-// recolor_slot(index, color)
-// Replaces every visible (non-transparent) pixel in the slot's sprite buffer
-// with `color`. Useful for silhouettes, hit-flash effects, etc.
 
 static mp_obj_t animation_recolor_slot(mp_obj_t idx_in, mp_obj_t color_in) {
     int idx = mp_obj_get_int(idx_in);
