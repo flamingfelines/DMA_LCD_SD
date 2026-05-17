@@ -150,7 +150,7 @@ typedef struct {
 
 static rect_cmd_t rect_queue[RECT_QUEUE_MAX];
 static int        rect_queue_len = 0;
-
+static void _flush_rect(rect_cmd_t *r, uint8_t *dst);
 static void _enqueue_text(uint8_t kind, mp_obj_t font_obj,
                            const char *str, int x, int y,
                            uint16_t fg, uint16_t bg, bool transparent_bg) {
