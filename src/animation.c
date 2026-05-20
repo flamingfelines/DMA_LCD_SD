@@ -68,8 +68,8 @@
 #define MAX_SLOTS       17
 #define TEXT_SLOT       16         // kept for API compat; ignored by write/text
 #define MAGIC_COLOR     58572      // RGB565 transparency key: RGB(231,154,99)
-#define TEXT_QUEUE_MAX  8          // max write()/text() calls per frame
-#define RECT_QUEUE_MAX  8          // max fill_rect() calls per frame
+#define TEXT_QUEUE_MAX  50          // max write()/text() calls per frame
+#define RECT_QUEUE_MAX  100          // max fill_rect() calls per frame
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── Slot system ──────────────────────────────────────────────────────────────
@@ -154,7 +154,10 @@ static void _flush_rect(rect_cmd_t *r, uint8_t *dst);
 static void _enqueue_text(uint8_t kind, mp_obj_t font_obj,
                            const char *str, int x, int y,
                            uint16_t fg, uint16_t bg, bool transparent_bg) {
-    if (text_queue_len >= TEXT_QUEUE_MAX) return;  // silently drop if full
+    if (text_queue_len >= TEXT_QUEUE_MAX) {
+    mp_printf(&mp_plat_print, "Max text reached\n");
+    return;
+}
     text_cmd_t *cmd  = &text_queue[text_queue_len++];
     cmd->kind        = kind;
     cmd->font_obj    = font_obj;
@@ -764,7 +767,10 @@ static void _flush_rect(rect_cmd_t *r, uint8_t *dst) {
 static mp_obj_t animation_fill_rect(size_t n_args, const mp_obj_t *args) {
     // display_buf argument (args[0]) accepted for API compatibility but ignored.
     // The rect is enqueued and flushed by draw_all() above slots, below text.
-    if (rect_queue_len >= RECT_QUEUE_MAX) return mp_const_none;
+    if (rect_queue_len >= RECT_QUEUE_MAX) {
+    mp_printf(&mp_plat_print, "Max rect reached\n");
+    return mp_const_none;
+}
 
     int color = mp_obj_get_int(args[5]);
     rect_cmd_t *r = &rect_queue[rect_queue_len++];
@@ -821,7 +827,10 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_scroll_obj, 3, 4, animation
 // compatibility but ignored — text is always flushed on top by draw_all().
 
 static mp_obj_t animation_write(size_t n_args, const mp_obj_t *args) {
-    if (text_queue_len >= TEXT_QUEUE_MAX) return mp_const_none;
+    if (text_queue_len >= TEXT_QUEUE_MAX) {
+    mp_printf(&mp_plat_print, "Max text reached\n");
+    return mp_const_none;
+}
 
     const char *text;
     static char single[2] = {0, 0};
@@ -853,7 +862,10 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(animation_write_obj, 6, 8, animation_
 // compatibility but ignored — text is always flushed on top by draw_all().
 
 static mp_obj_t animation_text(size_t n_args, const mp_obj_t *args) {
-    if (text_queue_len >= TEXT_QUEUE_MAX) return mp_const_none;
+    if (text_queue_len >= TEXT_QUEUE_MAX) {
+    mp_printf(&mp_plat_print, "Max text reached\n");
+    return mp_const_none;
+}
 
     const char *text;
     static char single[2] = {0, 0};
