@@ -55,9 +55,6 @@ static mp_obj_t sprite_builder_build(size_t n_args, const mp_obj_t *args) {
     if ((int)dest_info.len < frame_bytes)
         mp_raise_ValueError(MP_ERROR_TEXT("dest_buf too small"));
 
-    // ── Stack flip buffer — no heap allocation ────────────────────────────────
-    uint8_t flip_buf[MAX_PART_W * MAX_PART_H * 2];
-
     // ── Pre-fill dest with MAGIC_COLOR ────────────────────────────────────────
     uint8_t magic_hi = (MAGIC_COLOR >> 8) & 0xFF;
     uint8_t magic_lo =  MAGIC_COLOR       & 0xFF;
@@ -91,19 +88,19 @@ static mp_obj_t sprite_builder_build(size_t n_args, const mp_obj_t *args) {
         // ── Horizontal flip into flip_buf if requested ────────────────────────
         const uint8_t *src;
         if (flip) {
+            uint8_t flip_buf_local[part_w * part_h * 2];   // VLA, allocated only when needed
             for (int row = 0; row < part_h; row++) {
                 for (int col = 0; col < part_w; col++) {
-                    int si = (row * part_w + col)                * 2;
+                    int si = (row * part_w + col) * 2;
                     int di = (row * part_w + (part_w - 1 - col)) * 2;
-                    flip_buf[di]     = frame_src[si];
-                    flip_buf[di + 1] = frame_src[si + 1];
+                    flip_buf_local[di]     = frame_src[si];
+                    flip_buf_local[di + 1] = frame_src[si + 1];
                 }
             }
-            src = flip_buf;
+            src = flip_buf_local;
         } else {
             src = frame_src;
         }
-
         // ── Composite src onto dest — MAGIC_COLOR transparent, dx/dy offset ───
         for (int row = 0; row < part_h; row++) {
             int dest_row = row + dy;
