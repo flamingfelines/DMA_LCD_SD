@@ -22,7 +22,7 @@
 
 #define MAX_LAYERS  13
 #define MAX_PART_W  33
-#define MAX_PART_H  33S
+#define MAX_PART_H  33
 #define MAGIC_COLOR 0xE4CC      // RGB565 transparency key — must match animation.c
 
 // ─── build ────────────────────────────────────────────────────────────────────
