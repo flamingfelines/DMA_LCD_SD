@@ -40,7 +40,7 @@
                                 // tail + 2 eyes + mouth + accessory + 1 spare
 #define MAX_PART_W  33
 #define MAX_PART_H  33
-#define MAGIC_COLOR 0xE493      // RGB565 transparency key — must match animation.c
+#define MAGIC_COLOR 0xE49C      // RGB565 transparency key — must match animation.c
 
 // ─── build ────────────────────────────────────────────────────────────────────
 
